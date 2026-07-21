@@ -1,0 +1,3 @@
+faster-whisper==1.1.1
+psycopg[binary]==3.2.6
+yt-dlp==2025.3.31
