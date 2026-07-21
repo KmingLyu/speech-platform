@@ -3,6 +3,7 @@ from pathlib import Path
 from faster_whisper import WhisperModel
 
 from .config import Settings
+from .script_converter import asr_language
 
 
 class Transcriber:
@@ -21,7 +22,7 @@ class Transcriber:
             )
             self._models[model_name] = model
         segments, _info = model.transcribe(
-            str(audio_path), language=language, vad_filter=True, beam_size=5,
+            str(audio_path), language=asr_language(language), vad_filter=True, beam_size=5,
         )
         normalized = [
             {"id": index, "start": segment.start, "end": segment.end, "text": segment.text.strip()}

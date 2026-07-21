@@ -80,7 +80,7 @@ Content-Type: multipart/form-data
 | --- | --- | --- |
 | `file` | 二選一 | 音訊或影片檔案 |
 | `youtube_url` | 二選一 | HTTP(S) YouTube URL |
-| `language` | 否 | 例如 `zh`、`en`；不填則自動偵測 |
+| `language` | 否 | 例如 `zh`、`zh-tw`、`zh-cn`、`en`；不填則自動偵測 |
 | `model` | 否 | 預設 `large-v3-turbo` |
 
 成功後回傳 `202`，不等待辨識完成。
@@ -98,6 +98,10 @@ GET /v1/transcriptions/{id}?format=srt
 ```
 
 直接下載 SRT。尚未完成時回傳 `409 Conflict`；工作不存在時回傳 `404`。
+
+## 簡繁輸出轉換
+
+`language=zh-tw` 會先以 faster-whisper 支援的 `zh` 執行辨識，再在產出檔案前使用 OpenCC 的 `s2twp.json` 轉為繁體台灣用語；`language=zh-cn` 同樣以 `zh` 辨識，再使用 `tw2sp.json` 轉為簡體中國大陸用語。單純 `zh` 或未指定時，辨識文字維持模型原始輸出。這不是翻譯，也不改變時間軸；結果 JSON 的 `metadata.output_script` 會記錄實際輸出模式。
 
 ## 現階段的限制
 

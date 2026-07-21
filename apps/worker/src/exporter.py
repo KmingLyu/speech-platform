@@ -11,7 +11,8 @@ def srt_timestamp(seconds: float) -> str:
 
 
 def export_result(job_id: str, *, output_dir: Path, text: str, language: str | None,
-                  duration: float, model: str, segments: list[dict]) -> tuple[Path, Path, Path]:
+                  duration: float, model: str, output_script: str,
+                  segments: list[dict]) -> tuple[Path, Path, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     json_path = output_dir / "result.json"
     txt_path = output_dir / "transcript.txt"
@@ -19,7 +20,10 @@ def export_result(job_id: str, *, output_dir: Path, text: str, language: str | N
     json_path.write_text(json.dumps({
         "schema_version": "1.0", "job_id": job_id, "language": language,
         "duration": duration, "text": text, "segments": segments,
-        "metadata": {"provider": "faster-whisper", "model": model},
+        "metadata": {
+            "provider": "faster-whisper", "model": model,
+            "output_script": output_script,
+        },
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     txt_path.write_text(text + "\n", encoding="utf-8")
     srt_path.write_text("\n".join(

@@ -61,9 +61,11 @@ docker run --rm --gpus all nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 nvidia-s
 ```bash
 curl -X POST http://localhost:8080/v1/transcriptions \
   -F file=@meeting.mp3 \
-  -F language=zh \
+  -F language=zh-tw \
   -F model=large-v3-turbo
 
 curl http://localhost:8080/v1/transcriptions/tr_xxx
 curl -OJ 'http://localhost:8080/v1/transcriptions/tr_xxx?format=srt'
 ```
+
+中文地區輸出由 `language` 決定：`zh-tw` 會輸出繁體台灣用語、`zh-cn` 會輸出簡體中國大陸用語；單純使用 `zh` 或未指定時，保留模型原始輸出。轉換會套用到 JSON、TXT、SRT 和 API 回傳的文字。

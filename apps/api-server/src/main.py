@@ -9,10 +9,16 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
 from .config import Settings, load_settings
-from .db import connection
+from .db import connection, ensure_schema
+from .language import output_script_for
 
 app = FastAPI(title="Speech ASR Service", version="0.1.0")
 settings: Settings = load_settings()
+
+
+@app.on_event("startup")
+def apply_schema_changes() -> None:
+    ensure_schema(settings)
 
 
 def new_job_id() -> str:
@@ -34,6 +40,7 @@ def job_payload(job: dict) -> dict:
         "source_type": job["source_type"],
         "model": job["model"],
         "language": job["language"],
+        "output_script": job["output_script"],
         "duration": job["duration"],
         "processed_seconds": job["processed_seconds"],
         "created_at": job["created_at"],
@@ -70,6 +77,7 @@ async def create_transcription(
         ensure_youtube_url(youtube_url)
 
     job_id = new_job_id()
+    output_script = output_script_for(language)
     job_root = settings.data_root / "jobs" / job_id
     source_path: Path | None = None
     filename: str | None = None
@@ -93,11 +101,11 @@ async def create_transcription(
             conn.execute(
                 """
                 INSERT INTO transcription_jobs
-                    (id, status, source_type, source_url, original_filename, source_path, model, language)
-                VALUES (%s, 'queued', %s, %s, %s, %s, %s, %s)
+                    (id, status, source_type, source_url, original_filename, source_path, model, language, output_script)
+                VALUES (%s, 'queued', %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (job_id, "upload" if file else "youtube", youtube_url, filename,
-                 str(source_path) if source_path else None, model, language),
+                 str(source_path) if source_path else None, model, language, output_script),
             )
             conn.commit()
     except Exception:
