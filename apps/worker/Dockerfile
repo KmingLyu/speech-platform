@@ -1,3 +1,5 @@
+FROM denoland/deno:2.3.0 AS deno
+
 FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -11,10 +13,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
+COPY --from=deno /usr/bin/deno /usr/local/bin/deno
+
 WORKDIR /app
 
 COPY apps/worker/requirements.txt ./requirements.txt
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir --pre -r requirements.txt
 
 COPY apps/worker/src ./src
 

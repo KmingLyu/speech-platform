@@ -14,6 +14,13 @@ docker run --rm --gpus all nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 nvidia-s
 
 > CUDA image 版本必須與 host NVIDIA Driver 相容。部署前請在實際 GPU Server 上做一次短音檔測試後，再固定 image 與 Python 套件版本。
 
+Worker 在 build 時會安裝 yt-dlp nightly、官方 `yt-dlp-ejs` 外掛與 Deno，以因應 YouTube 經常調整的下載機制。若某次 YouTube 下載失敗，優先重新建置最新版 Worker image：
+
+```bash
+docker compose build --no-cache worker
+docker compose up -d worker
+```
+
 ## 2. 啟動
 
 ```bash
