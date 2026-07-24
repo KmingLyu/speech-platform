@@ -15,6 +15,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')"
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   worker:
     build:
@@ -34,7 +43,7 @@ services:
       - ./models:/models
     gpus: all
     depends_on:
-      postgres:
+      api-server:
         condition: service_healthy
 
   postgres:
@@ -46,7 +55,6 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./apps/api-server/migrations/001_create_transcription_jobs.sql:/docker-entrypoint-initdb.d/001_create_transcription_jobs.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s

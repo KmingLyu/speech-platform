@@ -1,0 +1,68 @@
+services:
+  api-server:
+    build:
+      context: .
+      dockerfile: apps/api-server/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://speech_test:speech_test@postgres:5432/speech_test
+      DATA_ROOT: /test-data
+      MAX_UPLOAD_SIZE_MB: 16
+    volumes:
+      - integration-data:/test-data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')"
+      interval: 1s
+      timeout: 2s
+      retries: 20
+    networks:
+      - integration
+
+  integration-tests:
+    build:
+      context: .
+      dockerfile: tests/integration/Dockerfile
+    environment:
+      API_URL: http://api-server:8080
+      DATABASE_URL: postgresql://speech_test:speech_test@postgres:5432/speech_test
+      DATA_ROOT: /test-data
+      MODEL_ROOT: /unused-models
+      WORKER_ID: fake-worker
+      POLL_INTERVAL_SECONDS: 0
+      MAX_ATTEMPTS: 3
+    volumes:
+      - integration-data:/test-data
+    depends_on:
+      api-server:
+        condition: service_healthy
+    networks:
+      - integration
+
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: speech_test
+      POSTGRES_USER: speech_test
+      POSTGRES_PASSWORD: speech_test
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U speech_test -d speech_test"]
+      interval: 1s
+      timeout: 2s
+      retries: 20
+    networks:
+      - integration
+
+volumes:
+  integration-data:
+
+networks:
+  integration:
+    internal: true

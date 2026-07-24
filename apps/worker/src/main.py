@@ -2,9 +2,9 @@ import logging
 import time
 
 from .config import load_settings
+from .dependencies import production_dependencies
 from .processor import process_job
 from .repository import claim_next_job
-from .transcriber import Transcriber
 
 
 def main() -> None:
@@ -12,7 +12,7 @@ def main() -> None:
     settings = load_settings()
     settings.data_root.mkdir(parents=True, exist_ok=True)
     settings.model_root.mkdir(parents=True, exist_ok=True)
-    transcriber = Transcriber(settings)
+    dependencies = production_dependencies(settings)
     logging.info("worker %s started", settings.worker_id)
     while True:
         job = claim_next_job(settings)
@@ -20,7 +20,7 @@ def main() -> None:
             time.sleep(settings.poll_interval_seconds)
             continue
         logging.info("processing job %s", job["id"])
-        process_job(settings, transcriber, job)
+        process_job(settings, dependencies, job)
 
 
 if __name__ == "__main__":

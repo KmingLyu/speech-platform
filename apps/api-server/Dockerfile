@@ -9,6 +9,7 @@ COPY apps/api-server/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY apps/api-server/src ./src
+COPY apps/api-server/migrations ./migrations
 
 EXPOSE 8080
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]
