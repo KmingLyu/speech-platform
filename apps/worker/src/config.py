@@ -12,6 +12,8 @@ class Settings:
     worker_id: str
     poll_interval_seconds: float
     max_attempts: int
+    heartbeat_interval_seconds: float = 5
+    stale_timeout_seconds: float = 30
 
 
 def load_settings() -> Settings:
@@ -23,4 +25,6 @@ def load_settings() -> Settings:
         worker_id=os.getenv("WORKER_ID", "gpu-worker-01"),
         poll_interval_seconds=float(os.getenv("POLL_INTERVAL_SECONDS", "2")),
         max_attempts=int(os.getenv("MAX_ATTEMPTS", "3")),
+        heartbeat_interval_seconds=float(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "5")),
+        stale_timeout_seconds=float(os.getenv("STALE_TIMEOUT_SECONDS", "30")),
     )

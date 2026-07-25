@@ -15,6 +15,7 @@ def db(settings: Settings):
 def claim_next_job(settings: Settings) -> dict[str, Any] | None:
     with db(settings) as conn:
         with conn.transaction():
+            recover_stale_jobs(conn, settings)
             job = conn.execute(
                 """
                 SELECT * FROM transcription_jobs
@@ -41,6 +42,68 @@ def claim_next_job(settings: Settings) -> dict[str, Any] | None:
             job["attempt_count"] += 1
             job["automatic_attempt_count"] += 1
             return job
+
+
+def recover_stale_jobs(conn: Any, settings: Settings) -> int:
+    """Recover processing jobs whose worker lease has expired.
+
+    The row lock makes recovery and claiming safe when multiple workers run at
+    once. Cancellation changes the status to ``cancel_requested``, so it is
+    intentionally never selected by this query.
+    """
+    stale_jobs = conn.execute(
+        """
+        SELECT id, automatic_attempt_count
+        FROM transcription_jobs
+        WHERE status = 'processing'
+          AND heartbeat_at < NOW() - (%s * INTERVAL '1 second')
+        FOR UPDATE SKIP LOCKED
+        """,
+        (settings.stale_timeout_seconds,),
+    ).fetchall()
+    for job in stale_jobs:
+        if job["automatic_attempt_count"] < settings.max_attempts:
+            conn.execute(
+                """
+                UPDATE transcription_jobs
+                SET status = 'queued', current_stage = NULL, progress = 0,
+                    error_code = 'worker_lost',
+                    error_message = 'The Worker stopped responding.',
+                    error_retryable = TRUE, worker_id = NULL, heartbeat_at = NULL,
+                    result_text = NULL, result_json_path = NULL,
+                    result_txt_path = NULL, result_srt_path = NULL,
+                    completed_at = NULL
+                WHERE id = %s
+                """,
+                (job["id"],),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE transcription_jobs
+                SET status = 'failed', current_stage = NULL,
+                    error_code = 'worker_lost',
+                    error_message = 'The Worker stopped responding.',
+                    error_retryable = TRUE, worker_id = NULL,
+                    heartbeat_at = NOW(), completed_at = NOW()
+                WHERE id = %s
+                """,
+                (job["id"],),
+            )
+    return len(stale_jobs)
+
+
+def heartbeat_job(settings: Settings, job_id: str) -> None:
+    with db(settings) as conn:
+        conn.execute(
+            """
+            UPDATE transcription_jobs
+            SET heartbeat_at = NOW()
+            WHERE id = %s AND status = 'processing' AND worker_id = %s
+            """,
+            (job_id, settings.worker_id),
+        )
+        conn.commit()
 
 
 def update_job(settings: Settings, job_id: str, *, status: str | None = None,

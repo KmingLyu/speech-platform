@@ -36,6 +36,8 @@ services:
       WORKER_ID: fake-worker
       POLL_INTERVAL_SECONDS: 0
       MAX_ATTEMPTS: 3
+      HEARTBEAT_INTERVAL_SECONDS: 5
+      STALE_TIMEOUT_SECONDS: 30
     volumes:
       - integration-data:/test-data
     depends_on:

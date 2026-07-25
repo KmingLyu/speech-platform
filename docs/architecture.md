@@ -148,7 +148,7 @@ Worker 把每次失敗分類為 Retryable failure 或 Permanent failure，並以
 
 ## 現階段的限制
 
-- Retryable failure 已有 bounded 自動重試與人工 Retry；heartbeat 的 stale-job recovery 是下一個可靠性工作。
+- Retryable failure 使用 bounded 自動重試與人工 Retry；Worker 以 heartbeat lease 支援 stale-job recovery，並沿用相同 retry budget。
 - `progress` 是階段式進度，ASR 執行中尚未逐 segment 回報。
 - 不包含 API 認證、速率限制、TLS、反向代理與備份。
 - YouTube 使用必須由部署者與呼叫者自行確認授權與平台條款。

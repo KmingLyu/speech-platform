@@ -1,4 +1,5 @@
 import logging
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -33,6 +34,8 @@ class JobLifecycle(Protocol):
     def fail(self, job_id: str, code: str, message: str, *, retryable: bool) -> None: ...
 
     def cancel_if_requested(self, job_id: str) -> bool: ...
+
+    def heartbeat(self, job_id: str) -> None: ...
 
 
 class SourceAcquirer(Protocol):
@@ -117,6 +120,19 @@ def process_job(
     job_id = job["id"]
     job_root = settings.data_root / "jobs" / job_id
     audio_path: Path | None = None
+    stop_heartbeat = threading.Event()
+
+    def refresh_heartbeat() -> None:
+        while not stop_heartbeat.wait(settings.heartbeat_interval_seconds):
+            try:
+                dependencies.jobs.heartbeat(job_id)
+            except Exception:
+                logger.exception("failed to refresh heartbeat for job %s", job_id)
+
+    heartbeat_method = getattr(dependencies.jobs, "heartbeat", None)
+    heartbeat_thread = threading.Thread(target=refresh_heartbeat, daemon=True)
+    if heartbeat_method is not None:
+        heartbeat_thread.start()
     try:
         if _stop_if_canceled(dependencies, job_id, job_root, audio_path):
             return
@@ -212,3 +228,7 @@ def process_job(
             failure.message,
             retryable=failure.retryable,
         )
+    finally:
+        stop_heartbeat.set()
+        if heartbeat_method is not None:
+            heartbeat_thread.join(timeout=settings.heartbeat_interval_seconds)

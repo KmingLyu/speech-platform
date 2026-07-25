@@ -1,4 +1,5 @@
 import os
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -10,6 +11,7 @@ from harness import run_fake_worker
 
 API_URL = os.environ["API_URL"]
 DATABASE_URL = os.environ["DATABASE_URL"]
+STALE_HEARTBEAT = datetime.now(UTC) - timedelta(hours=1)
 
 
 def create_queued_job(client: httpx.Client, **fields: str) -> str:
@@ -188,3 +190,63 @@ def test_a_retried_job_is_processed_again_under_the_same_identity() -> None:
     assert completed["attempts"] == {"count": 2, "automatic_count": 1}
     assert completed["artifacts"] == {"json": True, "txt": True, "srt": True}
     assert [item["id"] for item in history["items"]] == [job_id]
+
+
+def test_stale_processing_job_is_requeued_as_worker_lost() -> None:
+    with httpx.Client(base_url=API_URL) as client:
+        job_id = create_queued_job(client)
+        force_columns(
+            job_id,
+            status="processing",
+            worker_id="dead-worker",
+            heartbeat_at=STALE_HEARTBEAT,
+            attempt_count=1,
+            automatic_attempt_count=1,
+        )
+
+        run_fake_worker(env={"STALE_TIMEOUT_SECONDS": "1"})
+        detail = client.get(f"/v1/transcriptions/{job_id}").json()
+
+    assert detail["status"] == "completed"
+    assert detail["attempts"] == {"count": 2, "automatic_count": 2}
+
+
+def test_stale_recovery_exhaustion_is_a_stable_worker_lost_failure() -> None:
+    with httpx.Client(base_url=API_URL) as client:
+        job_id = create_queued_job(client)
+        force_columns(
+            job_id,
+            status="processing",
+            worker_id="dead-worker",
+            heartbeat_at=STALE_HEARTBEAT,
+            attempt_count=3,
+            automatic_attempt_count=3,
+        )
+
+        run_fake_worker(env={"STALE_TIMEOUT_SECONDS": "1"}, check=False)
+        detail = client.get(f"/v1/transcriptions/{job_id}").json()
+
+    assert detail["status"] == "failed"
+    assert detail["error"] == {
+        "code": "worker_lost",
+        "message": "The Worker stopped responding.",
+        "retryable": True,
+    }
+
+
+def test_stale_recovery_does_not_requeue_cancel_requested_jobs() -> None:
+    with httpx.Client(base_url=API_URL) as client:
+        job_id = create_queued_job(client)
+        force_columns(
+            job_id,
+            status="cancel_requested",
+            worker_id="dead-worker",
+            heartbeat_at=STALE_HEARTBEAT,
+            attempt_count=1,
+            automatic_attempt_count=1,
+        )
+
+        run_fake_worker(check=False)
+        detail = client.get(f"/v1/transcriptions/{job_id}").json()
+
+    assert detail["status"] == "cancel_requested"
