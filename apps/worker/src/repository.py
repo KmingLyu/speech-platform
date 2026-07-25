@@ -30,7 +30,7 @@ def claim_next_job(settings: Settings) -> dict[str, Any] | None:
             conn.execute(
                 """
                 UPDATE transcription_jobs
-                SET status = 'acquiring_source', current_stage = 'acquiring_source',
+                SET status = 'processing', current_stage = 'acquiring_source',
                     worker_id = %s, attempt_count = attempt_count + 1,
                     started_at = COALESCE(started_at, NOW()), heartbeat_at = NOW()
                 WHERE id = %s
@@ -78,7 +78,7 @@ def complete_job(settings: Settings, job_id: str, *, text: str, json_path: str,
         conn.execute(
             """
             UPDATE transcription_jobs
-            SET status = 'completed', progress = 100, current_stage = 'completed',
+            SET status = 'completed', progress = 100, current_stage = NULL,
                 result_text = %s, result_json_path = %s, result_txt_path = %s,
                 result_srt_path = %s, completed_at = NOW(), heartbeat_at = NOW()
             WHERE id = %s
@@ -93,7 +93,7 @@ def fail_job(settings: Settings, job_id: str, code: str, message: str) -> None:
         conn.execute(
             """
             UPDATE transcription_jobs
-            SET status = 'failed', current_stage = 'failed', error_code = %s,
+            SET status = 'failed', current_stage = NULL, error_code = %s,
                 error_message = %s, completed_at = NOW(), heartbeat_at = NOW()
             WHERE id = %s
             """,
