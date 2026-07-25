@@ -1,4 +1,5 @@
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
@@ -36,6 +37,14 @@ class JobRepository(Protocol):
     def create(self, job: NewTranscriptionJob) -> None: ...
 
     def get(self, job_id: str) -> dict | None: ...
+
+    def list(
+        self,
+        *,
+        status: str | None,
+        before: tuple[datetime, str] | None,
+        limit: int,
+    ) -> list[dict]: ...
 
 
 class JobStorage(Protocol):

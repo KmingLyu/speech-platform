@@ -426,3 +426,165 @@ def test_creation_accepts_single_video_shapes_and_requested_formats(tmp_path: Pa
     assert jobs.jobs[0].output_script == "traditional"
     assert jobs.jobs[0].output_formats == ("json", "srt")
     assert channel.json()["error"]["code"] == "youtube_url_not_supported"
+
+
+def test_job_history_returns_compact_summaries_in_stable_pages(tmp_path: Path) -> None:
+    sys.path.insert(0, str(API_SERVER_ROOT))
+    from src.config import Settings
+    from src.main import create_app
+
+    created_at = datetime(2026, 7, 25, 0, 2, tzinfo=UTC)
+    jobs = [
+        {
+            "id": "tr_new",
+            "status": "completed",
+            "progress": 100,
+            "current_stage": None,
+            "source_type": "upload",
+            "original_filename": "meeting.wav",
+            "source_url": None,
+            "model": "large-v3-turbo",
+            "language": "en",
+            "output_script": "original",
+            "output_formats": ["json", "txt"],
+            "duration": 12.5,
+            "processed_seconds": 12.5,
+            "created_at": created_at,
+            "started_at": created_at,
+            "completed_at": created_at,
+            "result_text": "must not be exposed",
+            "result_json_path": "/data/result.json",
+            "result_txt_path": "/data/transcript.txt",
+            "result_srt_path": None,
+            "error_code": None,
+            "error_message": None,
+        },
+        {
+            "id": "tr_old",
+            "status": "failed",
+            "progress": 20,
+            "current_stage": None,
+            "source_type": "youtube",
+            "original_filename": None,
+            "source_url": "https://youtu.be/example",
+            "model": "large-v3-turbo",
+            "language": None,
+            "output_script": "original",
+            "output_formats": ["json", "txt", "srt"],
+            "duration": None,
+            "processed_seconds": None,
+            "created_at": created_at.replace(minute=1),
+            "started_at": created_at,
+            "completed_at": created_at,
+            "result_text": "private failure fixture",
+            "result_json_path": None,
+            "result_txt_path": None,
+            "result_srt_path": None,
+            "error_code": "permanent_failure",
+            "error_message": "Source is unavailable",
+        },
+    ]
+
+    class Jobs:
+        def create(self, _job) -> None:
+            raise AssertionError("not used")
+
+        def get(self, _job_id: str) -> dict | None:
+            raise AssertionError("not used")
+
+        def list(self, *, status, before, limit):
+            result = [job for job in jobs if status is None or job["status"] == status]
+            if before is not None:
+                result = [
+                    job for job in result
+                    if (job["created_at"], job["id"]) < before
+                ]
+            result.sort(key=lambda job: (job["created_at"], job["id"]), reverse=True)
+            return result[:limit + 1]
+
+    class Storage:
+        async def store_upload(self, *_args, **_kwargs):
+            raise AssertionError("not used")
+
+        def remove_job(self, _job_id: str) -> None:
+            raise AssertionError("not used")
+
+        def artifact_path(self, _job: dict, _format: str) -> Path | None:
+            return None
+
+    app = create_app(
+        settings=Settings(database_url="postgresql://unused", data_root=tmp_path, max_upload_size_bytes=1024),
+        jobs=Jobs(), storage=Storage(), migrate=lambda: None,
+    )
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        response = client.get("/v1/transcriptions?limit=1")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"][0]["id"] == "tr_new"
+    assert payload["items"][0]["source"] == {"type": "upload", "filename": "meeting.wav"}
+    assert payload["items"][0]["configuration"]["formats"] == ["json", "txt"]
+    assert payload["items"][0]["artifacts"] == {"json": True, "txt": True, "srt": False}
+    assert payload["items"][0]["links"]["artifacts"] == {
+        "json": "/v1/transcriptions/tr_new?format=json",
+        "txt": "/v1/transcriptions/tr_new?format=txt",
+    }
+    assert "must not be exposed" not in response.text
+    assert payload["next_cursor"]
+
+
+def test_job_history_filters_and_rejects_invalid_pagination(tmp_path: Path) -> None:
+    sys.path.insert(0, str(API_SERVER_ROOT))
+    from src.config import Settings
+    from src.main import create_app
+
+    class Jobs:
+        def create(self, _job) -> None:
+            raise AssertionError("not used")
+
+        def get(self, _job_id: str) -> dict | None:
+            raise AssertionError("not used")
+
+        def list(self, *, status, before, limit):
+            assert status == "failed"
+            assert before is None
+            assert limit == 20
+            return []
+
+    class Storage:
+        async def store_upload(self, *_args, **_kwargs):
+            raise AssertionError("not used")
+
+        def remove_job(self, _job_id: str) -> None:
+            raise AssertionError("not used")
+
+        def artifact_path(self, _job: dict, _format: str) -> Path | None:
+            return None
+
+    app = create_app(
+        settings=Settings(database_url="postgresql://unused", data_root=tmp_path, max_upload_size_bytes=1024),
+        jobs=Jobs(), storage=Storage(), migrate=lambda: None,
+    )
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        filtered = client.get("/v1/transcriptions?status=failed")
+        invalid_status = client.get("/v1/transcriptions?status=done")
+        invalid_limit = client.get("/v1/transcriptions?limit=101")
+        invalid_cursor = client.get("/v1/transcriptions?cursor=not-a-cursor")
+
+    assert filtered.status_code == 200
+    assert filtered.json() == {"items": [], "next_cursor": None}
+    assert invalid_status.json() == {
+        "error": {"code": "invalid_status", "message": "Unsupported job status"}
+    }
+    assert invalid_limit.json() == {
+        "error": {"code": "invalid_limit", "message": "limit must be between 1 and 100"}
+    }
+    assert invalid_cursor.json() == {
+        "error": {"code": "invalid_cursor", "message": "Invalid pagination cursor"}
+    }

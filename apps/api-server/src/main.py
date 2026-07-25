@@ -1,3 +1,6 @@
+import base64
+import binascii
+import json
 import secrets
 from collections.abc import Callable
 from contextlib import asynccontextmanager
@@ -22,6 +25,11 @@ from .ports import JobRepository, JobStorage, NewTranscriptionJob, UploadTooLarg
 from .storage import LocalJobStorage
 
 MigrationRunner = Callable[[], None]
+PUBLIC_STATUSES = frozenset(
+    {"queued", "processing", "completed", "failed", "cancel_requested", "canceled"}
+)
+DEFAULT_LIST_LIMIT = 20
+MAX_LIST_LIMIT = 100
 
 
 def new_job_id() -> str:
@@ -96,6 +104,114 @@ def _error(code: str, message: str, details: object | None = None) -> dict:
     if details is not None:
         payload["details"] = details
     return {"error": payload}
+
+
+def encode_cursor(created_at: datetime, job_id: str) -> str:
+    payload = json.dumps(
+        {"created_at": created_at.astimezone(UTC).isoformat(), "id": job_id},
+        separators=(",", ":"),
+    ).encode()
+    return base64.urlsafe_b64encode(payload).decode().rstrip("=")
+
+
+def decode_cursor(cursor: str) -> tuple[datetime, str]:
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded).decode())
+        if (
+            not isinstance(payload, dict)
+            or set(payload) != {"created_at", "id"}
+            or not isinstance(payload["id"], str)
+        ):
+            raise ValueError
+        created_at = datetime.fromisoformat(payload["created_at"])
+        if created_at.tzinfo is None or not payload["id"]:
+            raise ValueError
+        return created_at.astimezone(UTC), payload["id"]
+    except (
+        ValueError,
+        TypeError,
+        KeyError,
+        json.JSONDecodeError,
+        binascii.Error,
+        UnicodeDecodeError,
+    ):
+        raise HTTPException(
+            400,
+            detail={"code": "invalid_cursor", "message": "Invalid pagination cursor"},
+        ) from None
+
+
+def parse_list_limit(value: str) -> int:
+    try:
+        limit = int(value)
+    except ValueError:
+        raise HTTPException(
+            400,
+            detail={"code": "invalid_limit", "message": "limit must be between 1 and 100"},
+        ) from None
+    if not 1 <= limit <= MAX_LIST_LIMIT:
+        raise HTTPException(
+            400,
+            detail={"code": "invalid_limit", "message": "limit must be between 1 and 100"},
+        )
+    return limit
+
+
+def job_summary(job: dict) -> dict:
+    output_formats = set(job.get("output_formats") or ("json", "txt", "srt"))
+    completed = job["status"] == "completed"
+    artifact_columns = {
+        "json": "result_json_path",
+        "txt": "result_txt_path",
+        "srt": "result_srt_path",
+    }
+    available_formats = {
+        format for format in output_formats
+        if job.get(artifact_columns[format])
+    }
+    source = {"type": job["source_type"]}
+    if job.get("original_filename"):
+        source["filename"] = job["original_filename"]
+    if job.get("source_url"):
+        source["url"] = job["source_url"]
+    return {
+        "id": job["id"],
+        "status": job["status"],
+        "current_stage": job["current_stage"],
+        "progress": job["progress"],
+        "source": source,
+        "configuration": {
+            "model": job["model"],
+            "language": job["language"],
+            "output_script": job["output_script"],
+            "formats": sorted(output_formats),
+        },
+        "timing": {
+            "duration": job["duration"],
+            "processed_seconds": job["processed_seconds"],
+            "created_at": _timestamp(job["created_at"]),
+            "started_at": _timestamp(job["started_at"]),
+            "completed_at": _timestamp(job["completed_at"]),
+        },
+        "error": (
+            {"code": job["error_code"], "message": job["error_message"]}
+            if job.get("error_code")
+            else None
+        ),
+        "artifacts": {
+            "json": completed and "json" in output_formats and bool(job.get("result_json_path")),
+            "txt": completed and "txt" in output_formats and bool(job.get("result_txt_path")),
+            "srt": completed and "srt" in output_formats and bool(job.get("result_srt_path")),
+        },
+        "links": {
+            "self": f"/v1/transcriptions/{job['id']}",
+            "artifacts": {
+                format: f"/v1/transcriptions/{job['id']}?format={format}"
+                for format in sorted(available_formats)
+            } if completed else {},
+        },
+    }
 
 
 def job_payload(job: dict) -> dict:
@@ -267,6 +383,29 @@ def create_app(
             },
             headers={"Location": f"/v1/transcriptions/{job_id}"},
         )
+
+    @application.get("/v1/transcriptions")
+    def list_transcriptions(
+        status: str | None = None,
+        limit: str = str(DEFAULT_LIST_LIMIT),
+        cursor: str | None = None,
+    ):
+        if status is not None and status not in PUBLIC_STATUSES:
+            raise HTTPException(
+                400,
+                detail={"code": "invalid_status", "message": "Unsupported job status"},
+            )
+        page_limit = parse_list_limit(limit)
+        before = decode_cursor(cursor) if cursor is not None else None
+        page = job_repository.list(status=status, before=before, limit=page_limit)
+        has_next = len(page) > page_limit
+        items = page[:page_limit]
+        next_cursor = (
+            encode_cursor(items[-1]["created_at"], items[-1]["id"])
+            if has_next and items
+            else None
+        )
+        return {"items": [job_summary(job) for job in items], "next_cursor": next_cursor}
 
     @application.get("/v1/transcriptions/{job_id}")
     def get_transcription(
