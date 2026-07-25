@@ -497,6 +497,35 @@ def create_app(
             headers={"Location": f"/v1/transcriptions/{job_id}"},
         )
 
+    @application.delete("/v1/transcriptions/{job_id}", status_code=204)
+    def delete_transcription(job_id: str):
+        job = job_repository.get(job_id)
+        if job is None:
+            raise HTTPException(
+                404,
+                detail={"code": "job_not_found", "message": "Transcription job not found"},
+            )
+        if job["status"] not in {"completed", "failed", "canceled"}:
+            raise HTTPException(
+                409,
+                detail={
+                    "code": "job_not_terminal",
+                    "message": "Transcription job must be terminal before deletion",
+                },
+            )
+        # Keep metadata if filesystem cleanup fails; the job can then be retried.
+        job_storage.remove_job(job_id)
+        deleted = job_repository.delete(job_id)
+        if deleted is None:
+            raise HTTPException(
+                404,
+                detail={
+                    "code": "job_not_found",
+                    "message": "Transcription job not found",
+                },
+            )
+        return None
+
     return application
 
 

@@ -95,6 +95,24 @@ class PostgresJobRepository(JobRepository):
             conn.commit()
             return job
 
+    def delete(self, job_id: str) -> dict | None:
+        """Remove a terminal job and return its metadata for storage cleanup.
+
+        The status predicate prevents deleting a job while a Worker may still be
+        using its source or result files.
+        """
+        with connection(self.settings) as conn:
+            job = conn.execute(
+                """
+                DELETE FROM transcription_jobs
+                WHERE id = %s AND status IN ('completed', 'failed', 'canceled')
+                RETURNING *
+                """,
+                (job_id,),
+            ).fetchone()
+            conn.commit()
+            return job
+
     def list(
         self,
         *,

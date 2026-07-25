@@ -199,6 +199,44 @@ def test_worker_only_publishes_requested_artifacts() -> None:
     assert txt_result.status_code == 404
 
 
+def test_terminal_job_deletion_removes_metadata_and_artifacts() -> None:
+    with httpx.Client(base_url=API_URL) as client:
+        created = client.post(
+            "/v1/transcriptions",
+            data={"youtube_url": "https://youtu.be/delete-me"},
+        )
+        location = created.headers["Location"]
+        run_fake_worker()
+
+        deleted = client.delete(location)
+        detail = client.get(location)
+
+    assert deleted.status_code == 204
+    assert deleted.content == b""
+    assert detail.status_code == 404
+    assert detail.json() == {
+        "error": {"code": "job_not_found", "message": "Transcription job not found"}
+    }
+
+
+def test_active_job_deletion_requires_cancellation_first() -> None:
+    with httpx.Client(base_url=API_URL) as client:
+        created = client.post(
+            "/v1/transcriptions",
+            data={"youtube_url": "https://youtu.be/delete-active"},
+        )
+        location = created.headers["Location"]
+        rejected = client.delete(location)
+
+    assert rejected.status_code == 409
+    assert rejected.json() == {
+        "error": {
+            "code": "job_not_terminal",
+            "message": "Transcription job must be terminal before deletion",
+        }
+    }
+
+
 def test_job_history_cursor_is_stable_when_new_jobs_are_created() -> None:
     with httpx.Client(base_url=API_URL) as client:
         locations = [
