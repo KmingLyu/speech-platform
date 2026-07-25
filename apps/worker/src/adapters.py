@@ -3,7 +3,7 @@ from pathlib import Path
 from .config import Settings
 from .exporter import export_result
 from .processor import ArtifactWriter, JobLifecycle
-from .repository import cancel_if_requested, complete_job, fail_job, update_job
+from .repository import cancel_if_requested, complete_job, fail_job, heartbeat_job, update_job
 
 
 class PostgresJobLifecycle(JobLifecycle):
@@ -12,6 +12,9 @@ class PostgresJobLifecycle(JobLifecycle):
 
     def update(self, job_id: str, **changes) -> None:
         update_job(self.settings, job_id, **changes)
+
+    def heartbeat(self, job_id: str) -> None:
+        heartbeat_job(self.settings, job_id)
 
     def cancel_if_requested(self, job_id: str) -> bool:
         return cancel_if_requested(self.settings, job_id)

@@ -142,6 +142,8 @@ def main() -> None:
         worker_id=os.environ["WORKER_ID"],
         poll_interval_seconds=0,
         max_attempts=int(os.environ["MAX_ATTEMPTS"]),
+        heartbeat_interval_seconds=float(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "5")),
+        stale_timeout_seconds=float(os.getenv("STALE_TIMEOUT_SECONDS", "30")),
     )
     job = claim_next_job(settings)
     if job is None:
