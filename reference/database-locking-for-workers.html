@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Worker 資料庫鎖定速查</title>
+<h1>Worker 資料庫鎖定速查</h1>
+<p><strong>目的：</strong>讓多個 Worker 從同一份工作清單分工時，不會重複處理同一筆工作。</p>
+<h2>三個階段</h2>
+<ol>
+  <li><strong>查看：</strong>找出尚未處理的工作。</li>
+  <li><strong>鎖定與認領：</strong>暫時把某筆工作保留給自己，其他 Worker 不能同時認領。</li>
+  <li><strong>更新：</strong>將工作標記為處理中、完成或失敗，並釋放鎖。</li>
+</ol>
+<h2>SKIP LOCKED 的概念</h2>
+<p>如果某筆工作已被另一個 Worker 鎖住，其他 Worker 不等待它，而是跳過它，繼續尋找下一筆可用工作。這讓多個 Worker 能並行前進。</p>
+<h2>鎖定不是永久租約</h2>
+<p>資料庫鎖通常只保護「認領的瞬間」。長時間處理時，系統還需要狀態與 heartbeat 來表示 Worker 仍然活著。若 Worker 消失，stale-job recovery 才能判斷工作是否應重新排隊。</p>

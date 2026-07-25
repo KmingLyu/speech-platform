@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Worker 如何接收並執行工作</title>
+<style>body{max-width:760px;margin:3rem auto;font:18px/1.7 system-ui;color:#24313b}h1{line-height:1.2}aside{padding:1rem 1.2rem;background:#eef5f3;border-left:4px solid #4d887a}</style>
+<h1>Worker 如何接收並執行工作？</h1>
+<p>把它想成「餐廳」：</p>
+<ul><li>API 是櫃檯：收單、給客人訂單編號。</li><li>PostgreSQL 是待辦單：記錄哪些訂單還沒做。</li><li>Worker 是廚師：拿一張待辦單，做完並更新狀態。</li></ul>
+<h2>一個工作怎麼走</h2>
+<ol><li>API 接受來源，建立 queued job。</li><li>Worker 主動查看待辦清單並認領工作。</li><li>認領後，其他 Worker 不應再拿到同一筆。</li><li>Worker 依序完成來源取得、媒體處理、辨識與輸出。</li><li>完成後把結果與狀態寫回去，Client 再查詢。</li></ol>
+<aside><strong>核心觀念：</strong>Worker 不是接住某個 HTTP 請求；它是在 API 建立工作後，從共享的工作清單中領取工作。</aside>
+<h2>可以直接增加 Worker 嗎？</h2>
+<p>架構上可以。資料庫的工作認領機制就是為了讓多個 Worker 分工，避免重複處理。</p>
+<p>但每個 Worker 都可能載入一份 ASR 模型，所以 GPU 記憶體通常是第一個限制。即使記憶體足夠，共用 GPU、CPU、磁碟、資料庫和檔案空間也可能使新增 Worker 沒有收益，甚至互相爭搶。</p>
+<p>此外，Worker 中途消失時，系統必須能辨認「這張待辦單是否被遺留」，再安全地讓它重新處理；這也是 heartbeat 與 stale-job recovery 的用途。</p>
+<h2>記住這三句話</h2>
+<ol><li>API 建立工作，不負責執行重活。</li><li>Worker 從資料庫認領工作，不是由 API 綁定派送。</li><li>多 Worker 可行，但並行上限由資源與恢復機制決定。</li></ol>
+<p>延伸閱讀：<a href="../README.md">README</a>、<a href="../docs/architecture.md">架構文件</a>。有不清楚的地方，繼續問我。</p>

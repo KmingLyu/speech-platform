@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>資料庫鎖定如何讓 Worker 分工</title>
+<style>body{max-width:760px;margin:3rem auto;font:18px/1.7 system-ui;color:#24313b}h1{line-height:1.2}aside{padding:1rem 1.2rem;background:#eef5f3;border-left:4px solid #4d887a}</style>
+<h1>資料庫鎖定如何讓 Worker 分工</h1>
+<p>想像一張放在櫃檯的待辦清單。三位 Worker 同時來拿工作，如果沒有規則，三個人可能都拿到同一張單。</p>
+<h2>鎖定解決什麼問題？</h2>
+<p>Worker 找到一筆 queued job 後，會先把它暫時鎖住並認領。這個動作像是把待辦單拿在手上：其他 Worker 看到它已被拿走，就不能再拿同一張。</p>
+<aside><strong>核心觀念：</strong>鎖定保護的是「認領動作」，避免兩個 Worker 同時決定自己要處理同一筆工作。</aside>
+<h2>為什麼要跳過已鎖定的工作？</h2>
+<p>假設 Worker A 正在拿第一筆工作，Worker B 不需要站在旁邊等待。它可以跳過第一筆，直接拿第二筆。這就是本專案使用的 <em>SKIP LOCKED</em> 思路：讓 Worker 彼此平行，而不是排隊等待。</p>
+<h2>鎖定不等於工作已完成</h2>
+<p>鎖定只表示「這筆工作目前由誰認領」。真正的處理可能需要很久，甚至 Worker 可能在中途斷電。因此系統還要持續更新 job 狀態與 heartbeat。</p>
+<ul><li>正常完成：標記 completed。</li><li>可恢復失敗：重新排隊或記錄 retry。</li><li>Worker 失聯：heartbeat 過期後，系統判斷這是 stale job，再讓它有機會被接手。</li></ul>
+<h2>一句話總結</h2>
+<p>資料庫鎖定確保「同一時間只有一個 Worker 認領一筆工作」；狀態與 heartbeat 則確保「認領者消失後，工作不會永久卡住」。</p>
+<p>延伸閱讀：<a href="../docs/architecture.md">架構文件</a>、<a href="../reference/worker-overview.html">Worker 大觀念速查</a>。有不清楚的地方，繼續問我。</p>
