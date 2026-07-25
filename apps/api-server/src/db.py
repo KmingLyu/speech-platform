@@ -69,6 +69,32 @@ class PostgresJobRepository(JobRepository):
             conn.commit()
             return job
 
+    def cancel(self, job_id: str) -> dict | None:
+        """Stop an unfinished job: queued jobs cancel immediately, active jobs request it.
+
+        Repeating the request while `cancel_requested` is a no-op that returns the
+        current state. Terminal jobs (`completed`, `failed`, `canceled`) match no row,
+        so the caller can reject with `job_not_cancelable`.
+        """
+        with connection(self.settings) as conn:
+            job = conn.execute(
+                """
+                UPDATE transcription_jobs
+                SET status = CASE status
+                        WHEN 'queued' THEN 'canceled'
+                        WHEN 'processing' THEN 'cancel_requested'
+                        ELSE status
+                    END,
+                    current_stage = CASE WHEN status = 'queued' THEN NULL ELSE current_stage END,
+                    completed_at = CASE WHEN status = 'queued' THEN NOW() ELSE completed_at END
+                WHERE id = %s AND status IN ('queued', 'processing', 'cancel_requested')
+                RETURNING *
+                """,
+                (job_id,),
+            ).fetchone()
+            conn.commit()
+            return job
+
     def list(
         self,
         *,

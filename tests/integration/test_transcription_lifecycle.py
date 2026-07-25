@@ -51,6 +51,9 @@ def test_worker_reports_coarse_processing_status_and_pipeline_stage(tmp_path: Pa
         def fail(self, job_id: str, code: str, message: str, *, retryable: bool) -> None:
             raise AssertionError((job_id, code, message, retryable))
 
+        def cancel_if_requested(self, job_id: str) -> bool:
+            return False
+
     class Sources:
         def acquire(self, _job: dict, _job_root: Path) -> Path:
             source = tmp_path / "source.media"

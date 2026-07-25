@@ -32,6 +32,8 @@ class JobLifecycle(Protocol):
 
     def fail(self, job_id: str, code: str, message: str, *, retryable: bool) -> None: ...
 
+    def cancel_if_requested(self, job_id: str) -> bool: ...
+
 
 class SourceAcquirer(Protocol):
     def acquire(self, job: dict, job_root: Path) -> Path: ...
@@ -90,6 +92,23 @@ class WorkerDependencies:
     artifacts: ArtifactWriter
 
 
+def _stop_if_canceled(
+    dependencies: WorkerDependencies,
+    job_id: str,
+    job_root: Path,
+    audio_path: Path | None,
+) -> bool:
+    """Confirm cancellation at a safe checkpoint, discarding any partial Attempt."""
+    if not dependencies.jobs.cancel_if_requested(job_id):
+        return False
+    if audio_path is not None:
+        audio_path.unlink(missing_ok=True)
+    discard = getattr(dependencies.artifacts, "discard", None)
+    if discard is not None:
+        discard(job_root / "result")
+    return True
+
+
 def process_job(
     settings: Settings,
     dependencies: WorkerDependencies,
@@ -97,7 +116,10 @@ def process_job(
 ) -> None:
     job_id = job["id"]
     job_root = settings.data_root / "jobs" / job_id
+    audio_path: Path | None = None
     try:
+        if _stop_if_canceled(dependencies, job_id, job_root, audio_path):
+            return
         dependencies.jobs.update(
             job_id,
             status="processing",
@@ -106,6 +128,8 @@ def process_job(
         )
         source_path = dependencies.sources.acquire(job, job_root)
 
+        if _stop_if_canceled(dependencies, job_id, job_root, audio_path):
+            return
         dependencies.jobs.update(
             job_id,
             status="processing",
@@ -115,6 +139,8 @@ def process_job(
         duration = dependencies.media.probe_duration(source_path)
         dependencies.jobs.update(job_id, duration=duration)
 
+        if _stop_if_canceled(dependencies, job_id, job_root, audio_path):
+            return
         dependencies.jobs.update(
             job_id,
             status="processing",
@@ -126,6 +152,8 @@ def process_job(
             job_root / "work" / "audio.flac",
         )
 
+        if _stop_if_canceled(dependencies, job_id, job_root, audio_path):
+            return
         dependencies.jobs.update(
             job_id,
             status="processing",
@@ -147,6 +175,8 @@ def process_job(
             processed_seconds=duration,
         )
 
+        if _stop_if_canceled(dependencies, job_id, job_root, audio_path):
+            return
         dependencies.jobs.update(
             job_id,
             status="processing",
@@ -158,6 +188,9 @@ def process_job(
             duration=duration, model=job["model"], output_script=output_script,
             segments=segments, formats=tuple(job.get("output_formats", ("json", "txt", "srt"))),
         )
+
+        if _stop_if_canceled(dependencies, job_id, job_root, audio_path):
+            return
         dependencies.jobs.complete(
             job_id,
             text=text,

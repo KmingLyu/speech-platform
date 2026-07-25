@@ -473,6 +473,30 @@ def create_app(
             headers={"Location": f"/v1/transcriptions/{job_id}"},
         )
 
+    @application.post("/v1/transcriptions/{job_id}/cancel")
+    def cancel_transcription(job_id: str):
+        if job_repository.get(job_id) is None:
+            raise HTTPException(
+                404,
+                detail={"code": "job_not_found", "message": "Transcription job not found"},
+            )
+        canceled = job_repository.cancel(job_id)
+        if canceled is None:
+            raise HTTPException(
+                409,
+                detail={
+                    "code": "job_not_cancelable",
+                    "message": "Transcription job cannot be canceled",
+                },
+            )
+        if canceled["status"] == "canceled":
+            return JSONResponse(status_code=200, content=job_payload(canceled))
+        return JSONResponse(
+            status_code=202,
+            content=job_payload(canceled),
+            headers={"Location": f"/v1/transcriptions/{job_id}"},
+        )
+
     return application
 
 

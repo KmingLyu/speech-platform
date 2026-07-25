@@ -694,6 +694,108 @@ def test_retry_returns_the_requeued_job_or_a_conflict_envelope(tmp_path: Path) -
     assert missing.json()["error"]["code"] == "job_not_found"
 
 
+def test_cancel_returns_the_canceled_or_requested_job_or_a_conflict_envelope(
+    tmp_path: Path,
+) -> None:
+    sys.path.insert(0, str(API_SERVER_ROOT))
+    from src.config import Settings
+    from src.main import create_app
+
+    def job(job_id: str, status: str) -> dict:
+        return {
+            "id": job_id,
+            "status": status,
+            "progress": 10,
+            "current_stage": "transcribing" if status == "processing" else None,
+            "source_type": "youtube",
+            "source_url": "https://youtu.be/example",
+            "original_filename": None,
+            "model": "large-v3-turbo",
+            "language": None,
+            "output_script": "original",
+            "output_formats": ["json", "txt", "srt"],
+            "duration": None,
+            "processed_seconds": None,
+            "created_at": datetime(2026, 7, 25, tzinfo=UTC),
+            "started_at": None,
+            "completed_at": None,
+            "attempt_count": 0,
+            "automatic_attempt_count": 0,
+            "result_text": None,
+            "result_json_path": None,
+            "result_txt_path": None,
+            "result_srt_path": None,
+            "error_code": None,
+            "error_message": None,
+        }
+
+    jobs_by_id = {
+        "tr_queued": job("tr_queued", "queued"),
+        "tr_processing": job("tr_processing", "processing"),
+        "tr_completed": job("tr_completed", "completed"),
+    }
+
+    class Jobs:
+        def create(self, _job) -> None:
+            raise AssertionError("not used")
+
+        def get(self, job_id: str) -> dict | None:
+            return jobs_by_id.get(job_id)
+
+        def cancel(self, job_id: str) -> dict | None:
+            stored = jobs_by_id.get(job_id)
+            if stored is None or stored["status"] not in {
+                "queued", "processing", "cancel_requested",
+            }:
+                return None
+            if stored["status"] == "queued":
+                return {**stored, "status": "canceled", "current_stage": None}
+            return {**stored, "status": "cancel_requested"}
+
+    class Storage:
+        async def store_upload(self, *_args, **_kwargs):
+            raise AssertionError("not used")
+
+        def remove_job(self, _job_id: str) -> None:
+            raise AssertionError("not used")
+
+        def artifact_path(self, _job: dict, _format: str) -> Path | None:
+            return None
+
+    app = create_app(
+        settings=Settings(
+            database_url="postgresql://unused",
+            data_root=tmp_path,
+            max_upload_size_bytes=1024,
+        ),
+        jobs=Jobs(),
+        storage=Storage(),
+        migrate=lambda: None,
+    )
+
+    with TestClient(app) as client:
+        queued = client.post("/v1/transcriptions/tr_queued/cancel")
+        processing = client.post("/v1/transcriptions/tr_processing/cancel")
+        completed = client.post("/v1/transcriptions/tr_completed/cancel")
+        missing = client.post("/v1/transcriptions/tr_missing/cancel")
+
+    assert queued.status_code == 200
+    assert queued.json()["status"] == "canceled"
+    assert processing.status_code == 202
+    assert processing.headers["Location"] == "/v1/transcriptions/tr_processing"
+    assert processing.json()["status"] == "cancel_requested"
+    assert processing.json()["current_stage"] == "transcribing"
+    assert completed.status_code == 409
+    assert completed.json() == {
+        "error": {
+            "code": "job_not_cancelable",
+            "message": "Transcription job cannot be canceled",
+        }
+    }
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "job_not_found"
+
+
 def test_failed_job_detail_exposes_the_failure_classification(tmp_path: Path) -> None:
     sys.path.insert(0, str(API_SERVER_ROOT))
     from src.config import Settings

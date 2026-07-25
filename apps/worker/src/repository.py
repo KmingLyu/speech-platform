@@ -91,6 +91,34 @@ def complete_job(settings: Settings, job_id: str, *, text: str,
         conn.commit()
 
 
+def cancel_if_requested(settings: Settings, job_id: str) -> bool:
+    """Confirm cancellation at a safe checkpoint between processing stages.
+
+    Only a job still marked `cancel_requested` is stopped here; anything else
+    (including a job that was never asked to cancel) is left untouched.
+    """
+    with db(settings) as conn:
+        with conn.transaction():
+            job = conn.execute(
+                "SELECT status FROM transcription_jobs WHERE id = %s FOR UPDATE",
+                (job_id,),
+            ).fetchone()
+            if job is None or job["status"] != "cancel_requested":
+                return False
+            conn.execute(
+                """
+                UPDATE transcription_jobs
+                SET status = 'canceled', current_stage = NULL, progress = 0,
+                    result_text = NULL, result_json_path = NULL,
+                    result_txt_path = NULL, result_srt_path = NULL,
+                    worker_id = NULL, heartbeat_at = NULL, completed_at = NOW()
+                WHERE id = %s
+                """,
+                (job_id,),
+            )
+            return True
+
+
 def fail_job(
     settings: Settings,
     job_id: str,

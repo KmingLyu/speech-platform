@@ -106,6 +106,16 @@ POST /v1/transcriptions/{id}/retry
 
 只有 `failed` 且 `error.retryable` 為 `true` 的 Job 可以人工 Retry。成功時回傳 `202` 與同一個 Job ID 的 `queued` 狀態；`queued`、`processing`、`cancel_requested`、`canceled`、`completed` 以及 Permanent failure 的 Job 都回傳 `409 job_not_retryable`；Job 不存在時回傳 `404 job_not_found`。
 
+### Cancellation
+
+```http
+POST /v1/transcriptions/{id}/cancel
+```
+
+`queued` 的 Job 沒有 Worker 在使用它的資源，取消請求直接把它變成終態 `canceled`，回傳 `200`，且不消耗任何 Worker Attempt。`processing` 的 Job 無法被同步中止 FFmpeg 或 GPU 工作，取消請求改為記錄 `cancel_requested` 並回傳 `202`；Worker 會在 acquiring_source、probing/transcoding、transcribing、exporting 之間的下一個安全檢查點觀察到這個狀態，捨棄尚未完成的暫存音訊與 result 目錄，然後把 Job 轉為 `canceled`，不留下可用的部分 Transcript artifact。
+
+在 Job 仍是 `queued`、`processing` 或 `cancel_requested` 時重複呼叫 cancel 是 idempotent 的，只會回傳目前狀態而不會產生額外效果。`completed`、`failed`、`canceled` 都是終態，對它們呼叫 cancel 一律回傳 `409 job_not_cancelable`；Job 不存在時回傳 `404 job_not_found`。
+
 ```http
 GET /v1/transcriptions/{id}?format=srt
 ```
