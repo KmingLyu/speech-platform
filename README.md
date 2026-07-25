@@ -62,11 +62,14 @@ docker run --rm --gpus all nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 nvidia-s
 curl -X POST http://localhost:8080/v1/transcriptions \
   -F file=@meeting.mp3 \
   -F language=zh-tw \
-  -F model=large-v3-turbo
+  -F model=large-v3-turbo \
+  -F formats=json -F formats=srt
 
 curl http://localhost:8080/v1/transcriptions/tr_xxx
 curl -OJ 'http://localhost:8080/v1/transcriptions/tr_xxx?format=srt'
 ```
+
+`formats` 可重複指定 `json`、`txt`、`srt`；省略時預設產出全部三種 artifact。部署可用 `SUPPORTED_MODELS`（逗號分隔）擴充 model allowlist，`large-v3-turbo` 一律是預設模型。
 
 中文地區輸出由 `language` 決定：`zh-tw` 會輸出繁體台灣用語、`zh-cn` 會輸出簡體中國大陸用語；單純使用 `zh` 或未指定時，保留模型原始輸出。轉換會套用到 JSON、TXT、SRT 和 API 回傳的文字。
 

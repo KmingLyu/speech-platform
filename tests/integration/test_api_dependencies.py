@@ -155,6 +155,7 @@ def test_job_detail_is_compact_and_exposes_lifecycle_metadata(tmp_path: Path) ->
             "model": "large-v3-turbo",
             "language": "en",
             "output_script": "original",
+            "formats": ["json", "srt", "txt"],
         },
         "timing": {
             "duration": 12.5,
@@ -288,3 +289,136 @@ def test_api_errors_use_a_structured_sanitized_envelope(tmp_path: Path) -> None:
             "message": "Provide exactly one of file or youtube_url",
         }
     }
+
+
+def test_creation_validates_configuration_and_persists_defaults(tmp_path: Path) -> None:
+    sys.path.insert(0, str(API_SERVER_ROOT))
+    from src.config import Settings
+    from src.main import create_app
+    from src.ports import StoredUpload
+
+    class Jobs:
+        def __init__(self) -> None:
+            self.created = []
+
+        def create(self, job) -> None:
+            self.created.append(job)
+
+        def get(self, job_id: str) -> dict | None:
+            job = next((item for item in self.created if item.id == job_id), None)
+            return None if job is None else {
+                **job.as_record(),
+                "progress": 0, "current_stage": None, "duration": None,
+                "processed_seconds": None, "result_text": None,
+                "result_json_path": None, "result_txt_path": None,
+                "result_srt_path": None, "error_code": None,
+                "error_message": None, "created_at": datetime.now(UTC),
+                "started_at": None, "completed_at": None,
+            }
+
+    class Storage:
+        async def store_upload(self, job_id: str, upload, max_size_bytes: int):
+            return StoredUpload(filename=upload.filename, path=tmp_path / job_id)
+
+        def remove_job(self, _job_id: str) -> None:
+            return None
+
+        def artifact_path(self, _job: dict, _format: str) -> Path | None:
+            return None
+
+    jobs = Jobs()
+    app = create_app(
+        settings=Settings(
+            database_url="postgresql://unused", data_root=tmp_path,
+            max_upload_size_bytes=1024, supported_models=frozenset({"large-v3-turbo", "tiny"}),
+        ),
+        jobs=jobs, storage=Storage(), migrate=lambda: None,
+    )
+    with TestClient(app) as client:
+        created = client.post(
+            "/v1/transcriptions",
+            files={"file": ("fixture.wav", b"fixture", "audio/wav")},
+        )
+        unsupported = client.post(
+            "/v1/transcriptions",
+            data={"youtube_url": "https://www.youtube.com/playlist?list=abc"},
+        )
+        invalid_language = client.post(
+            "/v1/transcriptions",
+            files={"file": ("fixture.wav", b"fixture", "audio/wav")},
+            data={"language": "xx"},
+        )
+        invalid_model = client.post(
+            "/v1/transcriptions",
+            files={"file": ("fixture.wav", b"fixture", "audio/wav")},
+            data={"model": "unknown"},
+        )
+        invalid_format = client.post(
+            "/v1/transcriptions",
+            files=[
+                ("file", ("fixture.wav", b"fixture", "audio/wav")),
+                ("formats", (None, "doc")),
+            ],
+        )
+
+    assert created.status_code == 202
+    assert len(jobs.created) == 1
+    assert jobs.created[0].language is None
+    assert jobs.created[0].model == "large-v3-turbo"
+    assert jobs.created[0].output_formats == ("json", "txt", "srt")
+    assert unsupported.json()["error"]["code"] == "youtube_url_not_supported"
+    assert invalid_language.json()["error"]["code"] == "language_not_supported"
+    assert invalid_model.json()["error"]["code"] == "model_not_supported"
+    assert invalid_format.json()["error"]["code"] == "format_not_supported"
+
+
+def test_creation_accepts_single_video_shapes_and_requested_formats(tmp_path: Path) -> None:
+    sys.path.insert(0, str(API_SERVER_ROOT))
+    from src.config import Settings
+    from src.main import create_app
+
+    class Jobs:
+        def __init__(self) -> None:
+            self.jobs = []
+
+        def create(self, job) -> None:
+            self.jobs.append(job)
+
+        def get(self, _job_id: str):
+            return None
+
+    class Storage:
+        async def store_upload(self, *_args, **_kwargs):
+            raise AssertionError("not used")
+
+        def remove_job(self, _job_id: str) -> None:
+            return None
+
+        def artifact_path(self, _job: dict, _format: str):
+            return None
+
+    jobs = Jobs()
+    app = create_app(
+        settings=Settings(database_url="postgresql://unused", data_root=tmp_path, max_upload_size_bytes=1024),
+        jobs=jobs, storage=Storage(), migrate=lambda: None,
+    )
+    with TestClient(app) as client:
+        valid = client.post(
+            "/v1/transcriptions",
+            files=[
+                ("youtube_url", (None, "https://youtu.be/video-id")),
+                ("language", (None, "zh-tw")),
+                ("formats", (None, "json")),
+                ("formats", (None, "srt")),
+            ],
+        )
+        channel = client.post(
+            "/v1/transcriptions",
+            data={"youtube_url": "https://www.youtube.com/channel/example"},
+        )
+
+    assert valid.status_code == 202
+    assert jobs.jobs[0].language == "zh-tw"
+    assert jobs.jobs[0].output_script == "traditional"
+    assert jobs.jobs[0].output_formats == ("json", "srt")
+    assert channel.json()["error"]["code"] == "youtube_url_not_supported"

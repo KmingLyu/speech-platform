@@ -18,17 +18,13 @@ class PostgresJobLifecycle(JobLifecycle):
         job_id: str,
         *,
         text: str,
-        json_path: str,
-        txt_path: str,
-        srt_path: str,
+        artifacts: dict[str, str],
     ) -> None:
         complete_job(
             self.settings,
             job_id,
             text=text,
-            json_path=json_path,
-            txt_path=txt_path,
-            srt_path=srt_path,
+            artifacts=artifacts,
         )
 
     def fail(self, job_id: str, code: str, message: str) -> None:
@@ -47,7 +43,8 @@ class FilesystemArtifactWriter(ArtifactWriter):
         model: str,
         output_script: str,
         segments: list[dict],
-    ) -> tuple[Path, Path, Path]:
+        formats: tuple[str, ...],
+    ) -> dict[str, Path]:
         return export_result(
             job_id,
             output_dir=output_dir,
@@ -57,4 +54,5 @@ class FilesystemArtifactWriter(ArtifactWriter):
             model=model,
             output_script=output_script,
             segments=segments,
+            formats=formats,
         )

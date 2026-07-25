@@ -60,6 +60,7 @@ def test_schema_migrations_are_repeatable_on_clean_database() -> None:
     assert applied == [
         ("001_create_transcription_jobs.sql",),
         ("002_add_output_script.sql",),
+        ("003_add_output_formats.sql",),
     ]
 
 
@@ -88,4 +89,5 @@ def test_schema_migrations_upgrade_existing_database() -> None:
     assert applied == [
         ("001_create_transcription_jobs.sql",),
         ("002_add_output_script.sql",),
+        ("003_add_output_formats.sql",),
     ]

@@ -72,8 +72,8 @@ def update_job(settings: Settings, job_id: str, *, status: str | None = None,
         conn.commit()
 
 
-def complete_job(settings: Settings, job_id: str, *, text: str, json_path: str,
-                 txt_path: str, srt_path: str) -> None:
+def complete_job(settings: Settings, job_id: str, *, text: str,
+                 artifacts: dict[str, str]) -> None:
     with db(settings) as conn:
         conn.execute(
             """
@@ -83,7 +83,7 @@ def complete_job(settings: Settings, job_id: str, *, text: str, json_path: str,
                 result_srt_path = %s, completed_at = NOW(), heartbeat_at = NOW()
             WHERE id = %s
             """,
-            (text, json_path, txt_path, srt_path, job_id),
+            (text, artifacts.get("json"), artifacts.get("txt"), artifacts.get("srt"), job_id),
         )
         conn.commit()
 

@@ -26,9 +26,7 @@ class JobLifecycle(Protocol):
         job_id: str,
         *,
         text: str,
-        json_path: str,
-        txt_path: str,
-        srt_path: str,
+        artifacts: dict[str, str],
     ) -> None: ...
 
     def fail(self, job_id: str, code: str, message: str) -> None: ...
@@ -75,7 +73,8 @@ class ArtifactWriter(Protocol):
         model: str,
         output_script: str,
         segments: list[dict],
-    ) -> tuple[Path, Path, Path]: ...
+        formats: tuple[str, ...],
+    ) -> dict[str, Path]: ...
 
 
 @dataclass(frozen=True)
@@ -151,17 +150,15 @@ def process_job(
             progress=95,
             current_stage="exporting",
         )
-        json_path, txt_path, srt_path = dependencies.artifacts.write(
+        artifacts = dependencies.artifacts.write(
             job_id, output_dir=job_root / "result", text=text, language=job["language"],
             duration=duration, model=job["model"], output_script=output_script,
-            segments=segments,
+            segments=segments, formats=tuple(job.get("output_formats", ("json", "txt", "srt"))),
         )
         dependencies.jobs.complete(
             job_id,
             text=text,
-            json_path=str(json_path),
-            txt_path=str(txt_path),
-            srt_path=str(srt_path),
+            artifacts={format: str(path) for format, path in artifacts.items()},
         )
         audio_path.unlink(missing_ok=True)
     except Exception:

@@ -9,6 +9,7 @@ CREATE TABLE transcription_jobs (
     source_path TEXT,
     model VARCHAR(64) NOT NULL,
     language VARCHAR(16),
+    output_formats TEXT[] NOT NULL DEFAULT ARRAY['json', 'txt', 'srt'],
     output_script VARCHAR(16) NOT NULL DEFAULT 'original'
         CHECK (output_script IN ('original', 'traditional', 'simplified')),
     duration DOUBLE PRECISION,
