@@ -1,22 +1,13 @@
 import os
-import subprocess
 import sys
 from pathlib import Path
 
 import httpx
 
+from harness import WORKER_ROOT, run_fake_worker
+
 
 API_URL = os.environ["API_URL"]
-WORKER_ROOT = Path("/workspace/apps/worker")
-FAKE_WORKER = Path("/workspace/tests/integration/fake_worker.py")
-
-
-def run_fake_worker() -> None:
-    subprocess.run(
-        [sys.executable, str(FAKE_WORKER)],
-        cwd=WORKER_ROOT,
-        check=True,
-    )
 
 
 def test_uploaded_source_job_can_be_created_and_polled() -> None:
@@ -57,8 +48,8 @@ def test_worker_reports_coarse_processing_status_and_pipeline_stage(tmp_path: Pa
         def complete(self, job_id: str, **_changes) -> None:
             updates.append({"job_id": job_id, "status": "completed"})
 
-        def fail(self, job_id: str, code: str, message: str) -> None:
-            raise AssertionError((job_id, code, message))
+        def fail(self, job_id: str, code: str, message: str, *, retryable: bool) -> None:
+            raise AssertionError((job_id, code, message, retryable))
 
     class Sources:
         def acquire(self, _job: dict, _job_root: Path) -> Path:

@@ -48,6 +48,27 @@ class PostgresJobRepository(JobRepository):
                 (job_id,),
             ).fetchone()
 
+    def retry(self, job_id: str) -> dict | None:
+        """Requeue a retryable failed job under the same identity and configuration.
+
+        The automatic-attempt budget is reset so the requeued job can be claimed,
+        while the lifetime attempt count keeps the job's execution history.
+        """
+        with connection(self.settings) as conn:
+            job = conn.execute(
+                """
+                UPDATE transcription_jobs
+                SET status = 'queued', current_stage = NULL, progress = 0,
+                    automatic_attempt_count = 0, worker_id = NULL,
+                    heartbeat_at = NULL, completed_at = NULL
+                WHERE id = %s AND status = 'failed' AND error_retryable
+                RETURNING *
+                """,
+                (job_id,),
+            ).fetchone()
+            conn.commit()
+            return job
+
     def list(
         self,
         *,

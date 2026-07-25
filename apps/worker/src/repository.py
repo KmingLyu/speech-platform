@@ -18,7 +18,7 @@ def claim_next_job(settings: Settings) -> dict[str, Any] | None:
             job = conn.execute(
                 """
                 SELECT * FROM transcription_jobs
-                WHERE status = 'queued' AND attempt_count < %s
+                WHERE status = 'queued' AND automatic_attempt_count < %s
                 ORDER BY created_at
                 FOR UPDATE SKIP LOCKED
                 LIMIT 1
@@ -32,12 +32,14 @@ def claim_next_job(settings: Settings) -> dict[str, Any] | None:
                 UPDATE transcription_jobs
                 SET status = 'processing', current_stage = 'acquiring_source',
                     worker_id = %s, attempt_count = attempt_count + 1,
+                    automatic_attempt_count = automatic_attempt_count + 1,
                     started_at = COALESCE(started_at, NOW()), heartbeat_at = NOW()
                 WHERE id = %s
                 """,
                 (settings.worker_id, job["id"]),
             )
             job["attempt_count"] += 1
+            job["automatic_attempt_count"] += 1
             return job
 
 
@@ -80,7 +82,8 @@ def complete_job(settings: Settings, job_id: str, *, text: str,
             UPDATE transcription_jobs
             SET status = 'completed', progress = 100, current_stage = NULL,
                 result_text = %s, result_json_path = %s, result_txt_path = %s,
-                result_srt_path = %s, completed_at = NOW(), heartbeat_at = NOW()
+                result_srt_path = %s, completed_at = NOW(), heartbeat_at = NOW(),
+                error_code = NULL, error_message = NULL, error_retryable = NULL
             WHERE id = %s
             """,
             (text, artifacts.get("json"), artifacts.get("txt"), artifacts.get("srt"), job_id),
@@ -88,17 +91,51 @@ def complete_job(settings: Settings, job_id: str, *, text: str,
         conn.commit()
 
 
-def fail_job(settings: Settings, job_id: str, code: str, message: str) -> None:
+def fail_job(
+    settings: Settings,
+    job_id: str,
+    code: str,
+    message: str,
+    *,
+    retryable: bool,
+) -> None:
+    """Record a failed Attempt, requeueing only while the automatic budget remains."""
     with db(settings) as conn:
-        conn.execute(
-            """
-            UPDATE transcription_jobs
-            SET status = 'failed', current_stage = NULL, error_code = %s,
-                error_message = %s, result_text = NULL,
-                result_json_path = NULL, result_txt_path = NULL,
-                result_srt_path = NULL, completed_at = NOW(), heartbeat_at = NOW()
-            WHERE id = %s
-            """,
-            (code, message[:2000], job_id),
-        )
-        conn.commit()
+        with conn.transaction():
+            job = conn.execute(
+                """
+                SELECT status, automatic_attempt_count FROM transcription_jobs
+                WHERE id = %s
+                FOR UPDATE
+                """,
+                (job_id,),
+            ).fetchone()
+            if job is None or job["status"] != "processing":
+                return
+            failure = (code, message[:2000], retryable, job_id)
+            if retryable and job["automatic_attempt_count"] < settings.max_attempts:
+                conn.execute(
+                    """
+                    UPDATE transcription_jobs
+                    SET status = 'queued', current_stage = NULL, progress = 0,
+                        error_code = %s, error_message = %s, error_retryable = %s,
+                        result_text = NULL, result_json_path = NULL,
+                        result_txt_path = NULL, result_srt_path = NULL,
+                        worker_id = NULL, heartbeat_at = NULL, completed_at = NULL
+                    WHERE id = %s
+                    """,
+                    failure,
+                )
+                return
+            conn.execute(
+                """
+                UPDATE transcription_jobs
+                SET status = 'failed', current_stage = NULL,
+                    error_code = %s, error_message = %s, error_retryable = %s,
+                    result_text = NULL, result_json_path = NULL,
+                    result_txt_path = NULL, result_srt_path = NULL,
+                    completed_at = NOW(), heartbeat_at = NOW()
+                WHERE id = %s
+                """,
+                failure,
+            )

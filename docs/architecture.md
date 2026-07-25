@@ -96,11 +96,41 @@ GET /v1/transcriptions/{id}
 
 Job 會保存建立時的 `Source`、`language`、`model` 與 `formats`；Retry 使用相同設定，不能修改既有 Job 的 Transcription configuration。
 
+回應中的 `attempts.count` 是這個 Job 累計的 Attempt 次數，`attempts.automatic_count` 是目前自動重試預算已使用的次數；`error.retryable` 表示最後一次失敗是否可能靠再一次 Attempt 恢復。
+
+### Retry
+
+```http
+POST /v1/transcriptions/{id}/retry
+```
+
+只有 `failed` 且 `error.retryable` 為 `true` 的 Job 可以人工 Retry。成功時回傳 `202` 與同一個 Job ID 的 `queued` 狀態；`queued`、`processing`、`cancel_requested`、`canceled`、`completed` 以及 Permanent failure 的 Job 都回傳 `409 job_not_retryable`；Job 不存在時回傳 `404 job_not_found`。
+
 ```http
 GET /v1/transcriptions/{id}?format=srt
 ```
 
 直接下載 SRT。尚未完成時回傳 `409 Conflict`；工作不存在時回傳 `404`。
+
+## 失敗分類與重試
+
+Worker 把每次失敗分類為 Retryable failure 或 Permanent failure，並以穩定的 `error.code` 與已淨化的訊息記錄；原始工具輸出只留在 Worker log。
+
+| `error.code` | 分類 | 典型原因 |
+| --- | --- | --- |
+| `source_download_failed` | Retryable | 下載逾時、暫時性網路或服務錯誤 |
+| `source_unavailable` | Permanent | 來源檔案遺失、影片已移除、私人或需確認年齡 |
+| `invalid_source_configuration` | Permanent | Job 的來源設定不完整 |
+| `media_unreadable` | Permanent | 媒體無法 probe 或解碼 |
+| `media_processing_failed` | Retryable | 轉檔失敗，可能是磁碟、記憶體或工具環境問題 |
+| `processing_failed` | Retryable | 未預期的環境或程式錯誤 |
+
+只有明確指出來源已不存在、私人或不支援的下載錯誤會判為 Permanent；其餘下載錯誤視為傳輸問題並保持 Retryable。
+
+- Retryable failure 只在自動重試預算（`MAX_ATTEMPTS`，預設 3）還有餘額時自動回到 `queued`，用完後轉為 `failed`。
+- Permanent failure 一律直接 `failed`，不自動重試，也不能人工 Retry。
+- 人工 Retry 會把自動重試預算歸零，讓同一個 Job ID 重新排隊；`attempts.count` 持續累加，因此自動重試不會形成無限迴圈。
+- 自動重試期間會保留上一次的 `error`，方便判斷重試原因；成功完成後才清除。
 
 ## 簡繁輸出轉換
 
@@ -108,7 +138,7 @@ GET /v1/transcriptions/{id}?format=srt
 
 ## 現階段的限制
 
-- Worker 失敗會將 Job 標為 `failed`；自動重試與 stale-job recovery 是下一個可靠性工作。
+- Retryable failure 已有 bounded 自動重試與人工 Retry；heartbeat 的 stale-job recovery 是下一個可靠性工作。
 - `progress` 是階段式進度，ASR 執行中尚未逐 segment 回報。
 - 不包含 API 認證、速率限制、TLS、反向代理與備份。
 - YouTube 使用必須由部署者與呼叫者自行確認授權與平台條款。
