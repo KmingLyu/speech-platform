@@ -1,8 +1,12 @@
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 from .config import Settings
+
+
+logger = logging.getLogger(__name__)
 
 
 class JobLifecycle(Protocol):
@@ -94,7 +98,7 @@ def process_job(
     try:
         dependencies.jobs.update(
             job_id,
-            status="acquiring_source",
+            status="processing",
             progress=2,
             current_stage="acquiring_source",
         )
@@ -102,7 +106,7 @@ def process_job(
 
         dependencies.jobs.update(
             job_id,
-            status="probing",
+            status="processing",
             progress=5,
             current_stage="probing",
         )
@@ -111,7 +115,7 @@ def process_job(
 
         dependencies.jobs.update(
             job_id,
-            status="transcoding",
+            status="processing",
             progress=10,
             current_stage="transcoding",
         )
@@ -122,7 +126,7 @@ def process_job(
 
         dependencies.jobs.update(
             job_id,
-            status="transcribing",
+            status="processing",
             progress=15,
             current_stage="transcribing",
         )
@@ -143,7 +147,7 @@ def process_job(
 
         dependencies.jobs.update(
             job_id,
-            status="exporting",
+            status="processing",
             progress=95,
             current_stage="exporting",
         )
@@ -160,5 +164,6 @@ def process_job(
             srt_path=str(srt_path),
         )
         audio_path.unlink(missing_ok=True)
-    except Exception as error:
-        dependencies.jobs.fail(job_id, "processing_failed", str(error))
+    except Exception:
+        logger.exception("transcription job %s failed", job_id)
+        dependencies.jobs.fail(job_id, "processing_failed", "Transcription processing failed.")

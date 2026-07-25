@@ -5,7 +5,8 @@ from datetime import UTC, datetime
 from typing import Annotated, Literal
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 
 from .config import Settings, load_settings
@@ -25,34 +26,58 @@ def new_job_id() -> str:
 def ensure_youtube_url(url: str) -> None:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise HTTPException(422, "youtube_url must be a valid http(s) URL")
+        raise HTTPException(
+            422,
+            detail={
+                "code": "invalid_source",
+                "message": "youtube_url must be a valid http(s) URL",
+            },
+        )
+
+
+def _timestamp(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _error(code: str, message: str, details: object | None = None) -> dict:
+    payload: dict[str, object] = {"code": code, "message": message}
+    if details is not None:
+        payload["details"] = details
+    return {"error": payload}
 
 
 def job_payload(job: dict) -> dict:
+    completed = job["status"] == "completed"
     return {
         "id": job["id"],
         "status": job["status"],
-        "progress": job["progress"],
         "current_stage": job["current_stage"],
-        "source_type": job["source_type"],
-        "model": job["model"],
-        "language": job["language"],
-        "output_script": job["output_script"],
-        "duration": job["duration"],
-        "processed_seconds": job["processed_seconds"],
-        "created_at": job["created_at"],
-        "started_at": job["started_at"],
-        "completed_at": job["completed_at"],
+        "progress": job["progress"],
+        "source": {"type": job["source_type"]},
+        "configuration": {
+            "model": job["model"],
+            "language": job["language"],
+            "output_script": job["output_script"],
+        },
+        "timing": {
+            "duration": job["duration"],
+            "processed_seconds": job["processed_seconds"],
+            "created_at": _timestamp(job["created_at"]),
+            "started_at": _timestamp(job["started_at"]),
+            "completed_at": _timestamp(job["completed_at"]),
+        },
         "error": (
             {"code": job["error_code"], "message": job["error_message"]}
             if job["error_code"]
             else None
         ),
-        "result": (
-            {"text": job["result_text"], "available_formats": ["json", "txt", "srt"]}
-            if job["status"] == "completed"
-            else None
-        ),
+        "artifacts": {
+            "json": completed and bool(job["result_json_path"]),
+            "txt": completed and bool(job["result_txt_path"]),
+            "srt": completed and bool(job["result_srt_path"]),
+        },
     }
 
 
@@ -81,6 +106,26 @@ def create_app(
         lifespan=lifespan,
     )
 
+    @application.exception_handler(HTTPException)
+    async def structured_http_error(_request: Request, exc: HTTPException):
+        if isinstance(exc.detail, dict) and "code" in exc.detail:
+            return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=_error("http_error", "The request could not be completed."),
+        )
+
+    @application.exception_handler(RequestValidationError)
+    async def structured_validation_error(_request: Request, _exc: RequestValidationError):
+        return JSONResponse(status_code=422, content=_error("invalid_request", "Invalid request"))
+
+    @application.exception_handler(Exception)
+    async def structured_internal_error(_request: Request, _exc: Exception):
+        return JSONResponse(
+            status_code=500,
+            content=_error("internal_error", "The server could not complete the request."),
+        )
+
     @application.get("/healthz")
     def healthz():
         return {"status": "ok"}
@@ -93,7 +138,13 @@ def create_app(
         model: Annotated[str, Form()] = "large-v3-turbo",
     ):
         if (file is None) == (youtube_url is None):
-            raise HTTPException(422, "Provide exactly one of file or youtube_url")
+            raise HTTPException(
+                422,
+                detail={
+                    "code": "invalid_source",
+                    "message": "Provide exactly one of file or youtube_url",
+                },
+            )
         if youtube_url:
             ensure_youtube_url(youtube_url)
 
@@ -125,7 +176,10 @@ def create_app(
             job_storage.remove_job(job_id)
             raise HTTPException(
                 413,
-                "Uploaded file exceeds MAX_UPLOAD_SIZE_MB",
+                detail={
+                    "code": "upload_too_large",
+                    "message": "Uploaded file exceeds the configured upload limit",
+                },
             ) from None
         except Exception:
             job_storage.remove_job(job_id)
@@ -152,11 +206,17 @@ def create_app(
     ):
         job = job_repository.get(job_id)
         if job is None:
-            raise HTTPException(404, "Transcription job not found")
+            raise HTTPException(
+                404,
+                detail={"code": "job_not_found", "message": "Transcription job not found"},
+            )
         if format is None:
             return job_payload(job)
         if job["status"] != "completed":
-            raise HTTPException(409, "Result is not ready")
+            raise HTTPException(
+                409,
+                detail={"code": "result_not_ready", "message": "Result is not ready"},
+            )
 
         file_metadata = {
             "json": ("application/json", "result.json"),
@@ -166,7 +226,10 @@ def create_app(
         media_type, filename = file_metadata[format]
         result_path = job_storage.artifact_path(job, format)
         if result_path is None or not result_path.is_file():
-            raise HTTPException(404, f"{format} artifact is unavailable")
+            raise HTTPException(
+                404,
+                detail={"code": "artifact_not_found", "message": "Artifact is unavailable"},
+            )
         return FileResponse(result_path, media_type=media_type, filename=filename)
 
     return application
