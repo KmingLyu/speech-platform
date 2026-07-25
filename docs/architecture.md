@@ -89,6 +89,14 @@ Content-Type: multipart/form-data
 ### 查詢與下載
 
 ```http
+GET /v1/transcriptions?status=queued&limit=20&cursor=<opaque-cursor>
+```
+
+History 以 `created_at` 加 Job ID 穩定排序，預設每頁 20 筆、最多 100 筆；summary
+不包含完整 Transcript。可用 `status` 篩選 public lifecycle status，`next_cursor`
+存在時再帶回下一頁。
+
+```http
 GET /v1/transcriptions/{id}
 ```
 
@@ -121,6 +129,15 @@ GET /v1/transcriptions/{id}?format=srt
 ```
 
 直接下載 SRT。尚未完成時回傳 `409 Conflict`；工作不存在時回傳 `404`。
+
+```http
+DELETE /v1/transcriptions/{id}
+```
+
+只有 `completed`、`failed` 與 `canceled` 等 terminal job 可以刪除；API 會移除
+metadata、Source、work 與所有 Transcript artifact，成功回傳 `204`。`queued`、
+`processing` 與 `cancel_requested` 必須先完成 cancellation，否則回傳
+`409 job_not_terminal`。MVP 只提供 explicit deletion，不會自動清理 retention。
 
 ## 失敗分類與重試
 

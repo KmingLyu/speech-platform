@@ -36,6 +36,18 @@ POSTGRES_PASSWORD=<long-random-password>
 DATABASE_URL=postgresql://speech_asr:<same-password>@postgres:5432/speech_asr
 ```
 
+建議明確確認下列 MVP 操作設定（也是 `.env.example` 的預設值）：
+
+| 設定 | 預設 | 用途 |
+| --- | ---: | --- |
+| `SUPPORTED_MODELS` | `large-v3-turbo` | API model allowlist；預設模型固定為 `large-v3-turbo` |
+| `MAX_UPLOAD_SIZE_MB` | `2048` | streaming upload safety guard |
+| `MAX_ATTEMPTS` | `3` | retryable failure 的 bounded automatic retry budget |
+| `HEARTBEAT_INTERVAL_SECONDS` | `5` | Worker heartbeat 頻率 |
+| `STALE_TIMEOUT_SECONDS` | `30` | 判定 Worker loss 的 processing heartbeat timeout |
+
+Language preference 由 API 驗證；未指定時自動偵測，`zh-tw` 與 `zh-cn` 分別套用繁體台灣及簡體中國大陸輸出。MVP 不啟用自動 retention：Source、work、artifact 與 metadata 會保留到使用者以 `DELETE /v1/transcriptions/{id}` 刪除 terminal job。
+
 首次部署或程式更新後：
 
 ```bash
@@ -65,7 +77,33 @@ docker compose logs -f worker
 curl http://localhost:8080/healthz
 ```
 
-## 3. 資料持久性
+Smoke check（不需要 GPU 或外部網路）請執行：
+
+```bash
+./scripts/test-integration
+```
+
+此流程使用 internal-only network、隔離 PostgreSQL、temporary storage 與 deterministic fake Worker，會驗證 submit、list、poll、complete、artifact download、retry、cancellation 與 deletion。既有資料庫升級也包含在 migration tests 中；若要做真實 GPU 驗證，請完成下節的 manual smoke。
+
+## 3. Manual GPU smoke
+
+在實際 GPU host 上先確認 `nvidia-smi`，再提交一段短、已獲授權的本地 audio/video fixture：
+
+```bash
+curl -fsS http://localhost:8080/healthz
+job=$(curl -fsS -X POST http://localhost:8080/v1/transcriptions \
+  -F file=@fixtures/short.wav -F formats=json -F formats=txt)
+id=$(printf '%s' "$job" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+until curl -fsS "http://localhost:8080/v1/transcriptions/$id" | \
+  python3 -c 'import json,sys; raise SystemExit(0 if json.load(sys.stdin)["status"] in {"completed","failed","canceled"} else 1)'; do
+  sleep 2
+done
+curl -fso /tmp/transcript.json "http://localhost:8080/v1/transcriptions/$id?format=json"
+```
+
+確認 completed job 的 JSON/TXT 內容、segment 時間軸與語言/文字系統符合預期；此檢查只驗證功能可用性，不以 WER 或 CER 作為 MVP gate。
+
+## 4. 資料持久性
 
 以下資料不在 Container writable layer，而是在 host 保留：
 
@@ -77,7 +115,7 @@ curl http://localhost:8080/healthz
 
 不要執行 `docker compose down -v`，除非你確定要刪除 PostgreSQL 的所有資料。
 
-## 4. 對外公開前
+## 5. 對外公開前
 
 目前 Compose 直接將 API 綁定在 host 8080 port。對外服務前建議：
 
