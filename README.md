@@ -8,6 +8,7 @@
 - `GET /v1/transcriptions/{id}`：查詢狀態與結果。
 - `GET /v1/transcriptions/{id}?format=json|txt|srt`：下載完成產物。
 - `POST /v1/transcriptions/{id}/retry`：以相同 Job ID 與設定重跑可重試的失敗工作。
+- `POST /v1/transcriptions/{id}/cancel`：取消尚未完成的工作；`queued` 立即取消，`processing` 非同步取消。
 - PostgreSQL 同時保存工作資料與作為簡易佇列。
 - 一個 GPU Worker；可日後以 PostgreSQL row lock 擴充為多個 Worker。
 
@@ -69,9 +70,12 @@ curl -X POST http://localhost:8080/v1/transcriptions \
 curl http://localhost:8080/v1/transcriptions/tr_xxx
 curl -OJ 'http://localhost:8080/v1/transcriptions/tr_xxx?format=srt'
 curl -X POST http://localhost:8080/v1/transcriptions/tr_xxx/retry
+curl -X POST http://localhost:8080/v1/transcriptions/tr_xxx/cancel
 ```
 
 失敗的工作會記錄 `error.code`、已淨化的 `error.message` 與 `error.retryable`。Retryable failure 會在 `MAX_ATTEMPTS`（預設 3）的預算內自動重試；預算用完後可用上面的 retry 端點以相同 Job ID 再跑一次。Permanent failure 不會自動重試，retry 會回傳 `409 job_not_retryable`，必須改用新的 Source 或設定重新建立工作。
+
+取消 `queued` 工作會直接變成 `canceled`，不會消耗任何 Worker Attempt；取消 `processing` 工作會回傳 `202` 並記錄 `cancel_requested`，Worker 會在下一個安全檢查點停止並確認 `canceled`，不留下可用的部分 Transcript artifact。重複呼叫 cancel 在仍為 `cancel_requested` 時是 idempotent 的；`completed`、`failed`、`canceled` 等終態工作呼叫 cancel 會回傳 `409 job_not_cancelable`。
 
 `formats` 可重複指定 `json`、`txt`、`srt`；省略時預設產出全部三種 artifact。部署可用 `SUPPORTED_MODELS`（逗號分隔）擴充 model allowlist，`large-v3-turbo` 一律是預設模型。
 
