@@ -88,7 +88,11 @@ def test_worker_reports_coarse_processing_status_and_pipeline_stage(tmp_path: Pa
 
     class Artifacts:
         def write(self, _job_id: str, **_kwargs):
-            return (tmp_path / "result.json", tmp_path / "result.txt", tmp_path / "result.srt")
+            return {
+                "json": tmp_path / "result.json",
+                "txt": tmp_path / "result.txt",
+                "srt": tmp_path / "result.srt",
+            }
 
     process_job(
         Settings(
@@ -113,6 +117,7 @@ def test_worker_reports_coarse_processing_status_and_pipeline_stage(tmp_path: Pa
             "model": "large-v3-turbo",
             "language": None,
             "output_script": "original",
+            "output_formats": ("json", "txt", "srt"),
         },
     )
 
@@ -169,3 +174,26 @@ def test_fake_youtube_job_completes_and_artifacts_can_be_downloaded() -> None:
     ]
     assert result_txt.text == "A deterministic transcript.\n"
     assert "00:00:00,000 --> 00:00:12,500" in result_srt.text
+
+
+def test_worker_only_publishes_requested_artifacts() -> None:
+    with httpx.Client(base_url=API_URL) as client:
+        created = client.post(
+            "/v1/transcriptions",
+            files=[
+                ("youtube_url", (None, "https://www.youtube.com/watch?v=only-json")),
+                ("formats", (None, "json")),
+            ],
+        )
+        assert created.status_code == 202
+        location = created.headers["Location"]
+
+        run_fake_worker()
+
+        detail = client.get(location)
+        json_result = client.get(f"{location}?format=json")
+        txt_result = client.get(f"{location}?format=txt")
+
+    assert detail.json()["artifacts"] == {"json": True, "txt": False, "srt": False}
+    assert json_result.status_code == 200
+    assert txt_result.status_code == 404

@@ -15,6 +15,7 @@ class NewTranscriptionJob:
     model: str
     language: str | None
     output_script: str
+    output_formats: tuple[str, ...] = ("json", "txt", "srt")
     status: str = "queued"
 
     def as_record(self) -> dict:

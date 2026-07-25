@@ -81,7 +81,8 @@ Content-Type: multipart/form-data
 | `file` | 二選一 | 音訊或影片檔案 |
 | `youtube_url` | 二選一 | HTTP(S) YouTube URL |
 | `language` | 否 | 例如 `zh`、`zh-tw`、`zh-cn`、`en`；不填則自動偵測 |
-| `model` | 否 | 預設 `large-v3-turbo` |
+| `model` | 否 | 預設 `large-v3-turbo`；必須在部署設定的 allowlist 中 |
+| `formats` | 否 | 可重複指定 `json`、`txt`、`srt`；省略時三者全選 |
 
 成功後回傳 `202`，不等待辨識完成。
 
@@ -92,6 +93,8 @@ GET /v1/transcriptions/{id}
 ```
 
 預設回傳 JSON 狀態。完成後內容包含純文字與可用格式。
+
+Job 會保存建立時的 `Source`、`language`、`model` 與 `formats`；Retry 使用相同設定，不能修改既有 Job 的 Transcription configuration。
 
 ```http
 GET /v1/transcriptions/{id}?format=srt

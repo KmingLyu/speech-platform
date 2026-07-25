@@ -3,13 +3,18 @@ from collections.abc import Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Annotated, Literal
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 
-from .config import Settings, load_settings
+from .config import (
+    DEFAULT_MODEL,
+    SUPPORTED_OUTPUT_FORMATS,
+    Settings,
+    load_settings,
+)
 from .db import PostgresJobRepository
 from .language import output_script_for
 from .migrations import run_migrations
@@ -25,14 +30,59 @@ def new_job_id() -> str:
 
 def ensure_youtube_url(url: str) -> None:
     parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+    host = (parsed.hostname or "").lower().rstrip(".")
+    hosts = {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"}
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    is_watch = parsed.path == "/watch" and len(query.get("v", [])) == 1
+    is_short_link = host == "youtu.be" and len(parsed.path.strip("/").split("/")) == 1
+    path_parts = [part for part in parsed.path.split("/") if part]
+    is_video_path = (
+        host != "youtu.be"
+        and len(path_parts) == 2
+        and path_parts[0] in {"shorts", "live", "embed"}
+        and bool(path_parts[1])
+    )
+    if (
+        parsed.scheme not in {"http", "https"}
+        or host not in hosts
+        or not (is_watch or is_short_link or is_video_path)
+        or any(key in query for key in {"list", "index", "channel", "search_query"})
+    ):
         raise HTTPException(
             422,
             detail={
-                "code": "invalid_source",
-                "message": "youtube_url must be a valid http(s) URL",
+                "code": "youtube_url_not_supported",
+                "message": "youtube_url must be a public single-video YouTube URL",
             },
         )
+
+
+SUPPORTED_LANGUAGES = frozenset(
+    "af am ar as az ba be bg bn bo br bs ca cs cy da de el en es et eu fa fi fo fr gl gu ha haw he hi hr ht hu hy id is it ja jw ka kk km kn ko la lb ln lo lt lv mg mi mk ml mn mr ms mt my ne nl nn no oc pa pl ps pt ro ru sa sd si sk sl sn so sq sr su sv sw ta te tg th tk tl tr tt uk ur uz vi yi yo zh".split()
+) | frozenset({"zh-tw", "zh-cn"})
+
+
+def normalize_language(language: str | None) -> str | None:
+    if language is None or not language.strip():
+        return None
+    normalized = language.strip().lower().replace("_", "-")
+    if normalized not in SUPPORTED_LANGUAGES:
+        raise HTTPException(
+            422,
+            detail={"code": "language_not_supported", "message": "Unsupported language"},
+        )
+    return normalized
+
+
+def normalize_formats(formats: list[str] | None) -> tuple[str, ...]:
+    requested = formats or ["json", "txt", "srt"]
+    normalized = tuple(dict.fromkeys(value.strip().lower() for value in requested))
+    if not normalized or any(value not in SUPPORTED_OUTPUT_FORMATS for value in normalized):
+        raise HTTPException(
+            422,
+            detail={"code": "format_not_supported", "message": "Unsupported output format"},
+        )
+    return normalized
 
 
 def _timestamp(value: datetime | None) -> str | None:
@@ -50,6 +100,7 @@ def _error(code: str, message: str, details: object | None = None) -> dict:
 
 def job_payload(job: dict) -> dict:
     completed = job["status"] == "completed"
+    output_formats = set(job.get("output_formats") or ("json", "txt", "srt"))
     return {
         "id": job["id"],
         "status": job["status"],
@@ -60,6 +111,7 @@ def job_payload(job: dict) -> dict:
             "model": job["model"],
             "language": job["language"],
             "output_script": job["output_script"],
+            "formats": sorted(output_formats),
         },
         "timing": {
             "duration": job["duration"],
@@ -74,9 +126,9 @@ def job_payload(job: dict) -> dict:
             else None
         ),
         "artifacts": {
-            "json": completed and bool(job["result_json_path"]),
-            "txt": completed and bool(job["result_txt_path"]),
-            "srt": completed and bool(job["result_srt_path"]),
+            "json": completed and "json" in output_formats and bool(job["result_json_path"]),
+            "txt": completed and "txt" in output_formats and bool(job["result_txt_path"]),
+            "srt": completed and "srt" in output_formats and bool(job["result_srt_path"]),
         },
     }
 
@@ -135,7 +187,8 @@ def create_app(
         file: Annotated[UploadFile | None, File()] = None,
         youtube_url: Annotated[str | None, Form()] = None,
         language: Annotated[str | None, Form()] = None,
-        model: Annotated[str, Form()] = "large-v3-turbo",
+        model: Annotated[str, Form()] = DEFAULT_MODEL,
+        formats: Annotated[list[str] | None, Form()] = None,
     ):
         if (file is None) == (youtube_url is None):
             raise HTTPException(
@@ -147,6 +200,13 @@ def create_app(
             )
         if youtube_url:
             ensure_youtube_url(youtube_url)
+        normalized_language = normalize_language(language)
+        if model not in resolved_settings.supported_models:
+            raise HTTPException(
+                422,
+                detail={"code": "model_not_supported", "message": "Unsupported model"},
+            )
+        normalized_formats = normalize_formats(formats)
 
         job_id = new_job_id()
         filename: str | None = None
@@ -168,8 +228,9 @@ def create_app(
                     original_filename=filename,
                     source_path=source_path,
                     model=model,
-                    language=language,
-                    output_script=output_script_for(language),
+                    language=normalized_language,
+                    output_script=output_script_for(normalized_language),
+                    output_formats=normalized_formats,
                 )
             )
         except UploadTooLarge:
