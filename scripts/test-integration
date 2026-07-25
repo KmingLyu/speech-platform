@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+
+project_name="speech-platform-integration"
+
+cleanup() {
+  docker compose \
+    --project-name "$project_name" \
+    --file compose.integration.yaml \
+    down --volumes --remove-orphans
+}
+
+trap cleanup EXIT
+
+docker compose \
+  --project-name "$project_name" \
+  --file compose.integration.yaml \
+  up --build --abort-on-container-exit --exit-code-from integration-tests \
+  --renew-anon-volumes

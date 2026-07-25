@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import psycopg
 
 from .config import Settings
+from .ports import JobRepository, NewTranscriptionJob
 
 
 @contextmanager
@@ -11,26 +12,36 @@ def connection(settings: Settings):
         yield conn
 
 
-def ensure_schema(settings: Settings) -> None:
-    """Apply small, backward-compatible schema changes for existing Docker volumes."""
-    with connection(settings) as conn:
-        conn.execute(
-            """
-            ALTER TABLE transcription_jobs
-            ADD COLUMN IF NOT EXISTS output_script VARCHAR(16) NOT NULL DEFAULT 'original'
-            """
-        )
-        conn.execute(
-            """
-            ALTER TABLE transcription_jobs
-            DROP CONSTRAINT IF EXISTS transcription_jobs_output_script_check
-            """
-        )
-        conn.execute(
-            """
-            ALTER TABLE transcription_jobs
-            ADD CONSTRAINT transcription_jobs_output_script_check
-            CHECK (output_script IN ('original', 'traditional', 'simplified'))
-            """
-        )
-        conn.commit()
+class PostgresJobRepository(JobRepository):
+    def __init__(self, settings: Settings):
+        self.settings = settings
+
+    def create(self, job: NewTranscriptionJob) -> None:
+        with connection(self.settings) as conn:
+            conn.execute(
+                """
+                INSERT INTO transcription_jobs
+                    (id, status, source_type, source_url, original_filename,
+                     source_path, model, language, output_script)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    job.id,
+                    job.status,
+                    job.source_type,
+                    job.source_url,
+                    job.original_filename,
+                    job.source_path,
+                    job.model,
+                    job.language,
+                    job.output_script,
+                ),
+            )
+            conn.commit()
+
+    def get(self, job_id: str) -> dict | None:
+        with connection(self.settings) as conn:
+            return conn.execute(
+                "SELECT * FROM transcription_jobs WHERE id = %s",
+                (job_id,),
+            ).fetchone()

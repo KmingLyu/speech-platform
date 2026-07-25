@@ -42,6 +42,14 @@ DATABASE_URL=postgresql://speech_asr:<same-password>@postgres:5432/speech_asr
 docker compose up -d --build
 ```
 
+API Server 啟動時會依序執行 `apps/api-server/migrations` 內尚未套用的 migration，
+並在 `schema_migrations` 記錄版本。既有、尚未有 migration 記錄的 database 會先
+baseline 原始 schema，再套用後續 migration。需要手動先執行時可使用：
+
+```bash
+docker compose run --rm api-server python -m src.migrations
+```
+
 單純重新啟動既有 image：
 
 ```bash

@@ -69,3 +69,16 @@ curl -OJ 'http://localhost:8080/v1/transcriptions/tr_xxx?format=srt'
 ```
 
 中文地區輸出由 `language` 決定：`zh-tw` 會輸出繁體台灣用語、`zh-cn` 會輸出簡體中國大陸用語；單純使用 `zh` 或未指定時，保留模型原始輸出。轉換會套用到 JSON、TXT、SRT 和 API 回傳的文字。
+
+## Integration tests
+
+以下單一指令會建立隔離的 PostgreSQL 與暫存 storage、執行 API／Worker
+typecheck，再跑完整 integration harness：
+
+```bash
+./scripts/test-integration
+```
+
+Harness 的 runtime network 是 internal-only，不會連到網際網路，也不會掛載 production
+storage 或要求 GPU。Source acquisition、media processing 與 Transcription 使用 deterministic
+fakes；測試結束後會移除測試專用 container、network 與 volume。
