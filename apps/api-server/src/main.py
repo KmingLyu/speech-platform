@@ -101,6 +101,10 @@ def _error(code: str, message: str, details: object | None = None) -> dict:
 def job_payload(job: dict) -> dict:
     completed = job["status"] == "completed"
     output_formats = set(job.get("output_formats") or ("json", "txt", "srt"))
+    artifact_links = {
+        format: f"/v1/transcriptions/{job['id']}?format={format}"
+        for format in sorted(output_formats)
+    } if completed else {}
     return {
         "id": job["id"],
         "status": job["status"],
@@ -129,6 +133,10 @@ def job_payload(job: dict) -> dict:
             "json": completed and "json" in output_formats and bool(job["result_json_path"]),
             "txt": completed and "txt" in output_formats and bool(job["result_txt_path"]),
             "srt": completed and "srt" in output_formats and bool(job["result_srt_path"]),
+        },
+        "links": {
+            "self": f"/v1/transcriptions/{job['id']}",
+            "artifacts": artifact_links,
         },
     }
 

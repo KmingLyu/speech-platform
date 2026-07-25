@@ -94,7 +94,9 @@ def fail_job(settings: Settings, job_id: str, code: str, message: str) -> None:
             """
             UPDATE transcription_jobs
             SET status = 'failed', current_stage = NULL, error_code = %s,
-                error_message = %s, completed_at = NOW(), heartbeat_at = NOW()
+                error_message = %s, result_text = NULL,
+                result_json_path = NULL, result_txt_path = NULL,
+                result_srt_path = NULL, completed_at = NOW(), heartbeat_at = NOW()
             WHERE id = %s
             """,
             (code, message[:2000], job_id),

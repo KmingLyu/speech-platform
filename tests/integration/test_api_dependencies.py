@@ -166,6 +166,10 @@ def test_job_detail_is_compact_and_exposes_lifecycle_metadata(tmp_path: Path) ->
         },
         "error": None,
         "artifacts": {"json": False, "txt": False, "srt": False},
+        "links": {
+            "self": "/v1/transcriptions/tr_processing",
+            "artifacts": {},
+        },
     }
     assert "must not be exposed in detail" not in response.text
 

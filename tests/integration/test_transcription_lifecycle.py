@@ -157,6 +157,11 @@ def test_fake_youtube_job_completes_and_artifacts_can_be_downloaded() -> None:
         assert payload["status"] == "completed"
         assert payload["source"]["type"] == "youtube"
         assert payload["artifacts"] == {"json": True, "txt": True, "srt": True}
+        assert payload["links"]["artifacts"] == {
+            "json": f"{location}?format=json",
+            "srt": f"{location}?format=srt",
+            "txt": f"{location}?format=txt",
+        }
         assert "A deterministic transcript." not in completed.text
 
         result_json = client.get(f"{location}?format=json")
@@ -195,5 +200,6 @@ def test_worker_only_publishes_requested_artifacts() -> None:
         txt_result = client.get(f"{location}?format=txt")
 
     assert detail.json()["artifacts"] == {"json": True, "txt": False, "srt": False}
+    assert detail.json()["links"]["artifacts"] == {"json": f"{location}?format=json"}
     assert json_result.status_code == 200
     assert txt_result.status_code == 404
