@@ -56,3 +56,8 @@ class FilesystemArtifactWriter(ArtifactWriter):
             segments=segments,
             formats=formats,
         )
+
+    def discard(self, output_dir: Path) -> None:
+        import shutil
+
+        shutil.rmtree(output_dir, ignore_errors=True)

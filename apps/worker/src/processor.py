@@ -76,6 +76,8 @@ class ArtifactWriter(Protocol):
         formats: tuple[str, ...],
     ) -> dict[str, Path]: ...
 
+    def discard(self, output_dir: Path) -> None: ...
+
 
 @dataclass(frozen=True)
 class WorkerDependencies:
@@ -163,4 +165,10 @@ def process_job(
         audio_path.unlink(missing_ok=True)
     except Exception:
         logger.exception("transcription job %s failed", job_id)
+        discard = getattr(dependencies.artifacts, "discard", None)
+        if discard is not None:
+            try:
+                discard(job_root / "result")
+            except Exception:
+                logger.exception("failed to discard artifacts for job %s", job_id)
         dependencies.jobs.fail(job_id, "processing_failed", "Transcription processing failed.")
