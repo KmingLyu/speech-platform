@@ -203,3 +203,34 @@ def test_worker_only_publishes_requested_artifacts() -> None:
     assert detail.json()["links"]["artifacts"] == {"json": f"{location}?format=json"}
     assert json_result.status_code == 200
     assert txt_result.status_code == 404
+
+
+def test_job_history_cursor_is_stable_when_new_jobs_are_created() -> None:
+    with httpx.Client(base_url=API_URL) as client:
+        locations = [
+            client.post(
+                "/v1/transcriptions",
+                data={"youtube_url": f"https://youtu.be/history-{index}"},
+            ).headers["Location"]
+            for index in range(4)
+        ]
+        first = client.get("/v1/transcriptions?limit=2")
+        newer = client.post(
+            "/v1/transcriptions",
+            data={"youtube_url": "https://youtu.be/history-newer"},
+        )
+        second = client.get(
+            f"/v1/transcriptions?limit=2&cursor={first.json()['next_cursor']}"
+        )
+        filtered = client.get("/v1/transcriptions?status=queued&limit=10")
+
+    assert first.status_code == 200
+    assert newer.status_code == 202
+    assert second.status_code == 200
+    first_ids = {item["id"] for item in first.json()["items"]}
+    second_ids = {item["id"] for item in second.json()["items"]}
+    assert len(first_ids) == 2
+    assert len(second_ids) == 2
+    assert first_ids.isdisjoint(second_ids)
+    assert newer.json()["id"] not in second_ids
+    assert {item["status"] for item in filtered.json()["items"]} == {"queued"}
