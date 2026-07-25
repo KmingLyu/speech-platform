@@ -50,6 +50,8 @@ class JobRepository(Protocol):
 
     def cancel(self, job_id: str) -> dict | None: ...
 
+    def delete(self, job_id: str) -> dict | None: ...
+
 
 class JobStorage(Protocol):
     async def store_upload(
