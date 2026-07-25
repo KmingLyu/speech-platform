@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Worker 大觀念速查</title>
+<h1>Worker 大觀念速查</h1>
+<p><strong>一句話：</strong>API 負責登記工作，PostgreSQL 像工作清單，Worker 負責認領並執行。</p>
+<h2>工作流</h2>
+<ol>
+  <li>Client 向 API 提交來源。</li>
+  <li>API 建立一筆 queued job，立即回應，不等待辨識完成。</li>
+  <li>Worker 從資料庫安全認領一筆尚未處理的 job。</li>
+  <li>Worker 下載或讀取來源、轉換媒體、執行 ASR、產生 artifacts。</li>
+  <li>Worker 更新狀態；Client 之後查詢或下載結果。</li>
+</ol>
+<h2>多 Worker</h2>
+<p>原則上可行。資料庫的鎖定機制避免多個 Worker 認領同一筆工作，因此可以水平增加處理者。</p>
+<p>但吞吐量不會無限增加：每個 Worker 都可能需要一份模型與 GPU 記憶體；共同的 GPU、CPU、磁碟、資料庫和共享檔案空間都可能成為瓶頸。</p>
+<p>因此「能同時啟動」和「值得同時啟動」是兩件事。部署前要確認 GPU 記憶體、GPU 計算能力、I/O、資料庫，以及失聯 Worker 的恢復機制。</p>
