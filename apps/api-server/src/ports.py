@@ -46,6 +46,8 @@ class JobRepository(Protocol):
         limit: int,
     ) -> list[dict]: ...
 
+    def retry(self, job_id: str) -> dict | None: ...
+
 
 class JobStorage(Protocol):
     async def store_upload(

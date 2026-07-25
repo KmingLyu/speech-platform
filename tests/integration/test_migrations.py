@@ -61,6 +61,7 @@ def test_schema_migrations_are_repeatable_on_clean_database() -> None:
         ("001_create_transcription_jobs.sql",),
         ("002_add_output_script.sql",),
         ("003_add_output_formats.sql",),
+        ("004_add_retry_classification.sql",),
     ]
 
 
@@ -90,4 +91,33 @@ def test_schema_migrations_upgrade_existing_database() -> None:
         ("001_create_transcription_jobs.sql",),
         ("002_add_output_script.sql",),
         ("003_add_output_formats.sql",),
+        ("004_add_retry_classification.sql",),
     ]
+
+
+def test_schema_migrations_carry_existing_attempts_into_the_automatic_budget() -> None:
+    with temporary_database() as database_url:
+        with psycopg.connect(database_url) as conn:
+            conn.execute(LEGACY_SCHEMA.read_text(encoding="utf-8"))
+            conn.execute(
+                """
+                INSERT INTO transcription_jobs
+                    (id, status, source_type, source_url, model, attempt_count,
+                     error_code, error_message)
+                VALUES ('tr_legacy', 'failed', 'youtube', 'https://youtu.be/legacy',
+                        'large-v3-turbo', 2, 'processing_failed', 'Legacy failure')
+                """
+            )
+            conn.commit()
+
+        run_migrations(database_url)
+
+        with psycopg.connect(database_url) as conn:
+            legacy = conn.execute(
+                """
+                SELECT attempt_count, automatic_attempt_count, error_retryable
+                FROM transcription_jobs WHERE id = 'tr_legacy'
+                """
+            ).fetchone()
+
+    assert legacy == (2, 2, None)

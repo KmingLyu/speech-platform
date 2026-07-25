@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Protocol
 
 from .config import Settings
+from .failures import classify_failure
 
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ class JobLifecycle(Protocol):
         artifacts: dict[str, str],
     ) -> None: ...
 
-    def fail(self, job_id: str, code: str, message: str) -> None: ...
+    def fail(self, job_id: str, code: str, message: str, *, retryable: bool) -> None: ...
 
 
 class SourceAcquirer(Protocol):
@@ -163,12 +164,18 @@ def process_job(
             artifacts={format: str(path) for format, path in artifacts.items()},
         )
         audio_path.unlink(missing_ok=True)
-    except Exception:
-        logger.exception("transcription job %s failed", job_id)
+    except Exception as error:
+        failure = classify_failure(error)
+        logger.exception("transcription job %s failed with %s", job_id, failure.code)
         discard = getattr(dependencies.artifacts, "discard", None)
         if discard is not None:
             try:
                 discard(job_root / "result")
             except Exception:
                 logger.exception("failed to discard artifacts for job %s", job_id)
-        dependencies.jobs.fail(job_id, "processing_failed", "Transcription processing failed.")
+        dependencies.jobs.fail(
+            job_id,
+            failure.code,
+            failure.message,
+            retryable=failure.retryable,
+        )

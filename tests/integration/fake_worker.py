@@ -7,6 +7,7 @@ sys.path.insert(0, str(WORKER_ROOT))
 
 from src.adapters import FilesystemArtifactWriter, PostgresJobLifecycle
 from src.config import Settings
+from src.failures import source_download_failed, source_unavailable
 from src.processor import (
     MediaProcessor,
     SourceAcquirer,
@@ -19,7 +20,16 @@ from src.repository import claim_next_job
 
 
 class FakeSourceAcquirer(SourceAcquirer):
+    """Acquires a deterministic source, or fails the way FAKE_SOURCE_FAILURE asks."""
+
+    def __init__(self, failure: str) -> None:
+        self.failure = failure
+
     def acquire(self, job: dict, job_root: Path) -> Path:
+        if self.failure == "retryable":
+            raise source_download_failed("fake transient download failure")
+        if self.failure == "permanent":
+            raise source_unavailable("fake unavailable source")
         if job["source_type"] == "upload":
             return Path(job["source_path"])
         source_path = job_root / "source" / "fake-youtube.media"
@@ -84,7 +94,7 @@ def main() -> None:
         raise RuntimeError("No queued Transcription job is available")
     dependencies = WorkerDependencies(
         jobs=PostgresJobLifecycle(settings),
-        sources=FakeSourceAcquirer(),
+        sources=FakeSourceAcquirer(os.getenv("FAKE_SOURCE_FAILURE", "")),
         media=FakeMediaProcessor(),
         transcription=FakeTranscriptionEngine(),
         converter=IdentityTranscriptConverter(),

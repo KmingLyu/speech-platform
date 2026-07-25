@@ -102,6 +102,8 @@ def test_job_detail_is_compact_and_exposes_lifecycle_metadata(tmp_path: Path) ->
         "created_at": datetime(2026, 7, 25, tzinfo=UTC),
         "started_at": datetime(2026, 7, 25, 0, 0, 1, tzinfo=UTC),
         "completed_at": None,
+        "attempt_count": 2,
+        "automatic_attempt_count": 1,
         "result_text": "must not be exposed in detail",
         "result_json_path": None,
         "result_txt_path": None,
@@ -164,6 +166,7 @@ def test_job_detail_is_compact_and_exposes_lifecycle_metadata(tmp_path: Path) ->
             "started_at": "2026-07-25T00:00:01Z",
             "completed_at": None,
         },
+        "attempts": {"count": 2, "automatic_count": 1},
         "error": None,
         "artifacts": {"json": False, "txt": False, "srt": False},
         "links": {
@@ -588,3 +591,183 @@ def test_job_history_filters_and_rejects_invalid_pagination(tmp_path: Path) -> N
     assert invalid_cursor.json() == {
         "error": {"code": "invalid_cursor", "message": "Invalid pagination cursor"}
     }
+
+
+def test_retry_returns_the_requeued_job_or_a_conflict_envelope(tmp_path: Path) -> None:
+    sys.path.insert(0, str(API_SERVER_ROOT))
+    from src.config import Settings
+    from src.main import create_app
+
+    def job(job_id: str, status: str, error_retryable: bool | None) -> dict:
+        return {
+            "id": job_id,
+            "status": status,
+            "progress": 40,
+            "current_stage": None,
+            "source_type": "youtube",
+            "source_url": "https://youtu.be/example",
+            "original_filename": None,
+            "model": "large-v3-turbo",
+            "language": "zh-tw",
+            "output_script": "traditional",
+            "output_formats": ["json", "srt"],
+            "duration": None,
+            "processed_seconds": None,
+            "created_at": datetime(2026, 7, 25, tzinfo=UTC),
+            "started_at": datetime(2026, 7, 25, 0, 0, 1, tzinfo=UTC),
+            "completed_at": datetime(2026, 7, 25, 0, 0, 9, tzinfo=UTC),
+            "attempt_count": 3,
+            "automatic_attempt_count": 3,
+            "result_text": None,
+            "result_json_path": None,
+            "result_txt_path": None,
+            "result_srt_path": None,
+            "error_code": "source_download_failed",
+            "error_message": "The source could not be downloaded.",
+            "error_retryable": error_retryable,
+        }
+
+    jobs_by_id = {
+        "tr_retryable": job("tr_retryable", "failed", True),
+        "tr_permanent": job("tr_permanent", "failed", False),
+    }
+
+    class Jobs:
+        def create(self, _job) -> None:
+            raise AssertionError("not used")
+
+        def get(self, job_id: str) -> dict | None:
+            return jobs_by_id.get(job_id)
+
+        def retry(self, job_id: str) -> dict | None:
+            stored = jobs_by_id.get(job_id)
+            if stored is None or stored["status"] != "failed" or not stored["error_retryable"]:
+                return None
+            return {**stored, "status": "queued", "progress": 0, "automatic_attempt_count": 0}
+
+    class Storage:
+        async def store_upload(self, *_args, **_kwargs):
+            raise AssertionError("not used")
+
+        def remove_job(self, _job_id: str) -> None:
+            raise AssertionError("not used")
+
+        def artifact_path(self, _job: dict, _format: str) -> Path | None:
+            return None
+
+    app = create_app(
+        settings=Settings(
+            database_url="postgresql://unused",
+            data_root=tmp_path,
+            max_upload_size_bytes=1024,
+        ),
+        jobs=Jobs(),
+        storage=Storage(),
+        migrate=lambda: None,
+    )
+
+    with TestClient(app) as client:
+        retried = client.post("/v1/transcriptions/tr_retryable/retry")
+        permanent = client.post("/v1/transcriptions/tr_permanent/retry")
+        missing = client.post("/v1/transcriptions/tr_missing/retry")
+
+    assert retried.status_code == 202
+    assert retried.headers["Location"] == "/v1/transcriptions/tr_retryable"
+    payload = retried.json()
+    assert payload["id"] == "tr_retryable"
+    assert payload["status"] == "queued"
+    assert payload["attempts"] == {"count": 3, "automatic_count": 0}
+    assert payload["configuration"] == {
+        "model": "large-v3-turbo",
+        "language": "zh-tw",
+        "output_script": "traditional",
+        "formats": ["json", "srt"],
+    }
+    assert permanent.status_code == 409
+    assert permanent.json() == {
+        "error": {
+            "code": "job_not_retryable",
+            "message": "Transcription job cannot be retried",
+        }
+    }
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "job_not_found"
+
+
+def test_failed_job_detail_exposes_the_failure_classification(tmp_path: Path) -> None:
+    sys.path.insert(0, str(API_SERVER_ROOT))
+    from src.config import Settings
+    from src.main import create_app
+
+    failed = {
+        "id": "tr_failed",
+        "status": "failed",
+        "progress": 10,
+        "current_stage": None,
+        "source_type": "youtube",
+        "source_url": "https://youtu.be/example",
+        "original_filename": None,
+        "model": "large-v3-turbo",
+        "language": None,
+        "output_script": "original",
+        "output_formats": ["json"],
+        "duration": None,
+        "processed_seconds": None,
+        "created_at": datetime(2026, 7, 25, tzinfo=UTC),
+        "started_at": datetime(2026, 7, 25, 0, 0, 1, tzinfo=UTC),
+        "completed_at": datetime(2026, 7, 25, 0, 0, 9, tzinfo=UTC),
+        "attempt_count": 1,
+        "automatic_attempt_count": 1,
+        "result_text": None,
+        "result_json_path": None,
+        "result_txt_path": None,
+        "result_srt_path": None,
+        "error_code": "source_unavailable",
+        "error_message": "The requested source is unavailable.",
+        "error_retryable": False,
+    }
+
+    class Jobs:
+        def create(self, _job) -> None:
+            raise AssertionError("not used")
+
+        def get(self, job_id: str) -> dict | None:
+            return failed if job_id == failed["id"] else None
+
+        def list(self, *, status, before, limit):
+            return [failed]
+
+    class Storage:
+        async def store_upload(self, *_args, **_kwargs):
+            raise AssertionError("not used")
+
+        def remove_job(self, _job_id: str) -> None:
+            raise AssertionError("not used")
+
+        def artifact_path(self, _job: dict, _format: str) -> Path | None:
+            return None
+
+    app = create_app(
+        settings=Settings(
+            database_url="postgresql://unused",
+            data_root=tmp_path,
+            max_upload_size_bytes=1024,
+        ),
+        jobs=Jobs(),
+        storage=Storage(),
+        migrate=lambda: None,
+    )
+
+    with TestClient(app) as client:
+        detail = client.get("/v1/transcriptions/tr_failed")
+        history = client.get("/v1/transcriptions")
+
+    assert detail.status_code == 200
+    assert detail.json()["error"] == {
+        "code": "source_unavailable",
+        "message": "The requested source is unavailable.",
+        "retryable": False,
+    }
+    assert detail.json()["attempts"] == {"count": 1, "automatic_count": 1}
+    assert history.json()["items"][0]["error"]["retryable"] is False
+    assert history.json()["items"][0]["attempts"] == {"count": 1, "automatic_count": 1}

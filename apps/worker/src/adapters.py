@@ -27,8 +27,8 @@ class PostgresJobLifecycle(JobLifecycle):
             artifacts=artifacts,
         )
 
-    def fail(self, job_id: str, code: str, message: str) -> None:
-        fail_job(self.settings, job_id, code, message)
+    def fail(self, job_id: str, code: str, message: str, *, retryable: bool) -> None:
+        fail_job(self.settings, job_id, code, message, retryable=retryable)
 
 
 class FilesystemArtifactWriter(ArtifactWriter):

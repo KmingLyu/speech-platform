@@ -158,6 +158,23 @@ def parse_list_limit(value: str) -> int:
     return limit
 
 
+def failure_payload(job: dict) -> dict | None:
+    if not job.get("error_code"):
+        return None
+    return {
+        "code": job["error_code"],
+        "message": job["error_message"],
+        "retryable": bool(job.get("error_retryable")),
+    }
+
+
+def attempts_payload(job: dict) -> dict:
+    return {
+        "count": job.get("attempt_count") or 0,
+        "automatic_count": job.get("automatic_attempt_count") or 0,
+    }
+
+
 def job_summary(job: dict) -> dict:
     output_formats = set(job.get("output_formats") or ("json", "txt", "srt"))
     completed = job["status"] == "completed"
@@ -194,11 +211,8 @@ def job_summary(job: dict) -> dict:
             "started_at": _timestamp(job["started_at"]),
             "completed_at": _timestamp(job["completed_at"]),
         },
-        "error": (
-            {"code": job["error_code"], "message": job["error_message"]}
-            if job.get("error_code")
-            else None
-        ),
+        "attempts": attempts_payload(job),
+        "error": failure_payload(job),
         "artifacts": {
             "json": completed and "json" in output_formats and bool(job.get("result_json_path")),
             "txt": completed and "txt" in output_formats and bool(job.get("result_txt_path")),
@@ -240,11 +254,8 @@ def job_payload(job: dict) -> dict:
             "started_at": _timestamp(job["started_at"]),
             "completed_at": _timestamp(job["completed_at"]),
         },
-        "error": (
-            {"code": job["error_code"], "message": job["error_message"]}
-            if job["error_code"]
-            else None
-        ),
+        "attempts": attempts_payload(job),
+        "error": failure_payload(job),
         "artifacts": {
             "json": completed and "json" in output_formats and bool(job["result_json_path"]),
             "txt": completed and "txt" in output_formats and bool(job["result_txt_path"]),
@@ -439,6 +450,28 @@ def create_app(
                 detail={"code": "artifact_not_found", "message": "Artifact is unavailable"},
             )
         return FileResponse(result_path, media_type=media_type, filename=filename)
+
+    @application.post("/v1/transcriptions/{job_id}/retry", status_code=202)
+    def retry_transcription(job_id: str):
+        if job_repository.get(job_id) is None:
+            raise HTTPException(
+                404,
+                detail={"code": "job_not_found", "message": "Transcription job not found"},
+            )
+        requeued = job_repository.retry(job_id)
+        if requeued is None:
+            raise HTTPException(
+                409,
+                detail={
+                    "code": "job_not_retryable",
+                    "message": "Transcription job cannot be retried",
+                },
+            )
+        return JSONResponse(
+            status_code=202,
+            content=job_payload(requeued),
+            headers={"Location": f"/v1/transcriptions/{job_id}"},
+        )
 
     return application
 

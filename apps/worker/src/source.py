@@ -2,20 +2,27 @@ from pathlib import Path
 
 from yt_dlp import YoutubeDL
 
-
-class SourceError(RuntimeError):
-    pass
+from .failures import (
+    PermanentFailure,
+    download_failure,
+    source_download_failed,
+    source_unavailable,
+)
 
 
 def acquire_source(job: dict, job_root: Path) -> Path:
     if job["source_type"] == "upload":
         path = Path(job["source_path"])
         if not path.is_file():
-            raise SourceError("Uploaded source file is missing")
+            raise source_unavailable(f"Uploaded source file is missing: {path}")
         return path
 
     if job["source_type"] != "youtube" or not job["source_url"]:
-        raise SourceError("Unsupported or incomplete source configuration")
+        raise PermanentFailure(
+            "invalid_source_configuration",
+            "The job source configuration is incomplete.",
+            detail=f"Unsupported source configuration: {job['source_type']}",
+        )
 
     source_dir = job_root / "source"
     source_dir.mkdir(parents=True, exist_ok=True)
@@ -31,9 +38,11 @@ def acquire_source(job: dict, job_root: Path) -> Path:
         with YoutubeDL(options) as downloader:
             downloader.download([job["source_url"]])
     except Exception as error:
-        raise SourceError(f"YouTube download failed: {error}") from error
+        raise download_failure(f"YouTube download failed: {error}") from error
 
     files = [path for path in source_dir.iterdir() if path.is_file()]
     if len(files) != 1:
-        raise SourceError("YouTube download did not produce exactly one source file")
+        raise source_download_failed(
+            f"YouTube download produced {len(files)} files in {source_dir}"
+        )
     return files[0]
