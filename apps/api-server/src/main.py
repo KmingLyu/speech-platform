@@ -288,7 +288,7 @@ def create_app(
         yield
 
     application = FastAPI(
-        title="Speech ASR Service",
+        title="Speech Platform API",
         version="0.1.0",
         lifespan=lifespan,
     )
