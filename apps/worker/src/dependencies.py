@@ -14,6 +14,7 @@ from .processor import (
 from .script_converter import OutputScript, convert_segments, convert_text
 from .source import acquire_source
 from .transcriber import Transcriber
+from .diarizer import FakeDiarizationEngine
 
 
 class ProductionSourceAcquirer(SourceAcquirer):
@@ -52,4 +53,5 @@ def production_dependencies(settings: Settings) -> WorkerDependencies:
         transcription=transcription,
         converter=ProductionTranscriptConverter(),
         artifacts=FilesystemArtifactWriter(),
+        diarization=FakeDiarizationEngine(),
     )

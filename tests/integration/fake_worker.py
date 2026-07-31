@@ -20,6 +20,7 @@ from src.processor import (
     process_job,
 )
 from src.repository import claim_next_job
+from src.diarizer import FakeDiarizationEngine
 
 
 def _trigger_cancellation(settings: Settings, job_id: str, stage: str, cancel_at: str | None) -> None:
@@ -161,6 +162,7 @@ def main() -> None:
         artifacts=CancelSimulatingArtifactWriter(
             FilesystemArtifactWriter(), settings=settings, job_id=job_id, cancel_at=cancel_at,
         ),
+        diarization=FakeDiarizationEngine(),
     )
     process_job(settings, dependencies, job)
 

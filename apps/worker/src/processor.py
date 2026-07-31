@@ -6,6 +6,7 @@ from typing import Protocol
 
 from .config import Settings
 from .failures import classify_failure
+from .diarizer import DiarizationEngine
 
 
 logger = logging.getLogger(__name__)
@@ -80,6 +81,7 @@ class ArtifactWriter(Protocol):
         output_script: str,
         segments: list[dict],
         formats: tuple[str, ...],
+        job_type: str = "transcription",
     ) -> dict[str, Path]: ...
 
     def discard(self, output_dir: Path) -> None: ...
@@ -93,6 +95,7 @@ class WorkerDependencies:
     transcription: TranscriptionEngine
     converter: TranscriptConverter
     artifacts: ArtifactWriter
+    diarization: DiarizationEngine | None = None
 
 
 def _stop_if_canceled(
@@ -185,11 +188,19 @@ def process_job(
             segments,
             output_script,
         )
-        dependencies.jobs.update(
-            job_id,
-            progress=90,
-            processed_seconds=duration,
-        )
+        if job.get("job_type", "transcription") == "diarization":
+            dependencies.jobs.update(job_id, progress=35, current_stage="aligning")
+            dependencies.jobs.update(job_id, progress=55, current_stage="diarizing")
+            diarizer = dependencies.diarization
+            if diarizer is None:
+                raise RuntimeError("Diarization adapter is unavailable")
+            segments = diarizer.diarize(
+                segments,
+                min_speakers=job.get("min_speakers"),
+                max_speakers=job.get("max_speakers"),
+            )
+            dependencies.jobs.update(job_id, progress=75, current_stage="attributing_speakers")
+        dependencies.jobs.update(job_id, progress=90, processed_seconds=duration)
 
         if _stop_if_canceled(dependencies, job_id, job_root, audio_path):
             return
@@ -203,6 +214,7 @@ def process_job(
             job_id, output_dir=job_root / "result", text=text, language=job["language"],
             duration=duration, model=job["model"], output_script=output_script,
             segments=segments, formats=tuple(job.get("output_formats", ("json", "txt", "srt"))),
+            job_type=job.get("job_type", "transcription"),
         )
 
         if _stop_if_canceled(dependencies, job_id, job_root, audio_path):

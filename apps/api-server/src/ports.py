@@ -19,6 +19,8 @@ class NewTranscriptionJob:
     output_formats: tuple[str, ...] = ("json", "txt", "srt")
     status: str = "queued"
     job_type: str = "transcription"
+    min_speakers: int | None = None
+    max_speakers: int | None = None
 
     def as_record(self) -> dict:
         return asdict(self)

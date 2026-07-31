@@ -22,7 +22,8 @@ def _write_text_durably(path: Path, content: str) -> None:
 
 def export_result(job_id: str, *, output_dir: Path, text: str, language: str | None,
                   duration: float, model: str, output_script: str,
-                  segments: list[dict], formats: tuple[str, ...]) -> dict[str, Path]:
+                  segments: list[dict], formats: tuple[str, ...],
+                  job_type: str = "transcription") -> dict[str, Path]:
     output_dir.parent.mkdir(parents=True, exist_ok=True)
     staging_dir = output_dir.with_name(f".{output_dir.name}.staging-{uuid4().hex}")
     try:
@@ -31,7 +32,8 @@ def export_result(job_id: str, *, output_dir: Path, text: str, language: str | N
         json_path = staging_dir / "result.json"
         if "json" in formats:
             _write_text_durably(json_path, json.dumps({
-                "schema_version": "1.0", "job_id": job_id, "language": language,
+                "schema_version": "1.0", "artifact_type": "diarized_transcript" if job_type == "diarization" else "transcript",
+                "job_id": job_id, "language": language,
                 "duration": duration, "text": text, "segments": segments,
                 "metadata": {
                     "provider": "faster-whisper", "model": model,
@@ -41,12 +43,19 @@ def export_result(job_id: str, *, output_dir: Path, text: str, language: str | N
             paths["json"] = output_dir / json_path.name
         if "txt" in formats:
             txt_path = staging_dir / "transcript.txt"
-            _write_text_durably(txt_path, text + "\n")
+            lines = [
+                f"[{segment['speaker']}] {segment['text']}" if job_type == "diarization" else segment["text"]
+                for segment in segments
+            ]
+            _write_text_durably(txt_path, ("\n".join(lines) if job_type == "diarization" else text) + "\n")
             paths["txt"] = output_dir / txt_path.name
         if "srt" in formats:
             srt_path = staging_dir / "transcript.srt"
+            def line(segment: dict) -> str:
+                speaker = f"[{segment['speaker']}] " if job_type == "diarization" else ""
+                return f"{segment['id'] + 1}\n{srt_timestamp(segment['start'])} --> {srt_timestamp(segment['end'])}\n{speaker}{segment['text']}\n"
             _write_text_durably(srt_path, "\n".join(
-                f"{segment['id'] + 1}\n{srt_timestamp(segment['start'])} --> {srt_timestamp(segment['end'])}\n{segment['text']}\n"
+                line(segment)
                 for segment in segments
             ))
             paths["srt"] = output_dir / srt_path.name

@@ -63,6 +63,7 @@ def test_schema_migrations_are_repeatable_on_clean_database() -> None:
         ("003_add_output_formats.sql",),
         ("004_add_retry_classification.sql",),
         ("005_add_job_type.sql",),
+        ("006_add_diarization_bounds.sql",),
     ]
 
 
@@ -94,6 +95,7 @@ def test_schema_migrations_upgrade_existing_database() -> None:
         ("003_add_output_formats.sql",),
         ("004_add_retry_classification.sql",),
         ("005_add_job_type.sql",),
+        ("006_add_diarization_bounds.sql",),
     ]
 
 

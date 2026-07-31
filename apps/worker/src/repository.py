@@ -140,6 +140,9 @@ def update_job(settings: Settings, job_id: str, *, status: str | None = None,
 def complete_job(settings: Settings, job_id: str, *, text: str,
                  artifacts: dict[str, str]) -> None:
     with db(settings) as conn:
+        job_type = conn.execute(
+            "SELECT job_type FROM transcription_jobs WHERE id = %s", (job_id,)
+        ).fetchone()["job_type"]
         conn.execute(
             """
             UPDATE transcription_jobs
@@ -149,7 +152,7 @@ def complete_job(settings: Settings, job_id: str, *, text: str,
                 error_code = NULL, error_message = NULL, error_retryable = NULL
             WHERE id = %s
             """,
-            (text, artifacts.get("json"), artifacts.get("txt"), artifacts.get("srt"), job_id),
+            (None if job_type == "diarization" else text, artifacts.get("json"), artifacts.get("txt"), artifacts.get("srt"), job_id),
         )
         conn.commit()
 
