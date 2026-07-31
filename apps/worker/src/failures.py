@@ -81,6 +81,14 @@ def source_download_failed(detail: str) -> RetryableFailure:
     )
 
 
+def empty_transcript() -> PermanentFailure:
+    return PermanentFailure("empty_transcript", "The transcription produced no text.")
+
+
+def no_speakers_detected() -> PermanentFailure:
+    return PermanentFailure("no_speakers_detected", "No speakers were detected in the audio.")
+
+
 def download_failure(reason: str) -> ClassifiedFailure:
     """Classify a Source download error by whether any Attempt could acquire it.
 

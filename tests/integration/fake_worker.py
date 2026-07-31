@@ -20,7 +20,8 @@ from src.processor import (
     process_job,
 )
 from src.repository import claim_next_job
-from src.diarizer import FakeDiarizationEngine
+from src.alignment import WhisperWordAlignment
+from src.diarizer import DiarizationEngine
 
 
 def _trigger_cancellation(settings: Settings, job_id: str, stage: str, cancel_at: str | None) -> None:
@@ -91,17 +92,54 @@ class FakeTranscriptionEngine(TranscriptionEngine):
         language: str | None,
     ) -> tuple[str, list[dict]]:
         _trigger_cancellation(self.settings, self.job_id, "transcription", self.cancel_at)
+        scenario = os.getenv("FAKE_SCENARIO", "default")
+        if scenario == "empty-transcript":
+            return "", []
+        if scenario == "alternating":
+            return "Hello world again", [{
+                "id": 0, "start": 0.0, "end": 3.0, "text": "Hello world again",
+                "words": [
+                    {"start": 0.0, "end": 1.0, "text": "Hello"},
+                    {"start": 1.0, "end": 2.0, "text": " world"},
+                    {"start": 2.0, "end": 3.0, "text": " again"},
+                ],
+            }]
+        if scenario == "partial-attribution":
+            return "Hello mystery goodbye", [{
+                "id": 0, "start": 0.0, "end": 3.0, "text": "Hello mystery goodbye",
+                "words": [
+                    {"start": 0.0, "end": 1.0, "text": "Hello"},
+                    {"start": 1.5, "end": 2.0, "text": " mystery"},
+                    {"start": 2.0, "end": 3.0, "text": " goodbye"},
+                ],
+            }]
         return (
             "A deterministic transcript.",
-            [
-                {
-                    "id": 0,
-                    "start": 0.0,
-                    "end": 12.5,
-                    "text": "A deterministic transcript.",
-                }
-            ],
+            [{
+                "id": 0, "start": 0.0, "end": 12.5,
+                "text": "A deterministic transcript.",
+                "words": [{"start": 0.0, "end": 12.5, "text": "A deterministic transcript."}],
+            }],
         )
+
+
+class ControlledDiarizationEngine(DiarizationEngine):
+    def diarize(self, audio_path: Path, *, min_speakers: int | None, max_speakers: int | None) -> list[dict]:
+        del audio_path, min_speakers, max_speakers
+        scenario = os.getenv("FAKE_SCENARIO", "default")
+        if scenario == "no-speakers":
+            return []
+        if scenario == "alternating":
+            return [
+                {"start": 0.0, "end": 1.2, "speaker": "SPEAKER_00"},
+                {"start": 1.2, "end": 3.0, "speaker": "SPEAKER_01"},
+            ]
+        if scenario == "partial-attribution":
+            return [
+                {"start": 0.0, "end": 1.1, "speaker": "SPEAKER_00"},
+                {"start": 2.2, "end": 3.0, "speaker": "SPEAKER_01"},
+            ]
+        return [{"start": 0.0, "end": 12.5, "speaker": "SPEAKER_00"}]
 
 
 class IdentityTranscriptConverter(TranscriptConverter):
@@ -162,7 +200,8 @@ def main() -> None:
         artifacts=CancelSimulatingArtifactWriter(
             FilesystemArtifactWriter(), settings=settings, job_id=job_id, cancel_at=cancel_at,
         ),
-        diarization=FakeDiarizationEngine(),
+        alignment=WhisperWordAlignment(),
+        diarization=ControlledDiarizationEngine(),
     )
     process_job(settings, dependencies, job)
 

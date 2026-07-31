@@ -23,9 +23,19 @@ class Transcriber:
             self._models[model_name] = model
         segments, _info = model.transcribe(
             str(audio_path), language=asr_language(language), vad_filter=True, beam_size=5,
+            word_timestamps=True,
         )
         normalized = [
-            {"id": index, "start": segment.start, "end": segment.end, "text": segment.text.strip()}
+            {
+                "id": index,
+                "start": segment.start,
+                "end": segment.end,
+                "text": segment.text.strip(),
+                "words": [
+                    {"start": word.start, "end": word.end, "text": word.word}
+                    for word in (segment.words or [])
+                ],
+            }
             for index, segment in enumerate(segments)
         ]
         return "".join(segment["text"] for segment in normalized).strip(), normalized

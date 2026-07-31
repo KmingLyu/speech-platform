@@ -5,7 +5,9 @@ from pathlib import Path
 from typing import Protocol
 
 from .config import Settings
-from .failures import classify_failure
+from .failures import classify_failure, empty_transcript, no_speakers_detected
+from .alignment import AlignmentEngine
+from .attribution import attribute_words
 from .diarizer import DiarizationEngine
 
 
@@ -82,6 +84,7 @@ class ArtifactWriter(Protocol):
         segments: list[dict],
         formats: tuple[str, ...],
         job_type: str = "transcription",
+        metadata: dict | None = None,
     ) -> dict[str, Path]: ...
 
     def discard(self, output_dir: Path) -> None: ...
@@ -95,6 +98,7 @@ class WorkerDependencies:
     transcription: TranscriptionEngine
     converter: TranscriptConverter
     artifacts: ArtifactWriter
+    alignment: AlignmentEngine | None = None
     diarization: DiarizationEngine | None = None
 
 
@@ -188,18 +192,30 @@ def process_job(
             segments,
             output_script,
         )
+        metadata: dict = {}
         if job.get("job_type", "transcription") == "diarization":
-            dependencies.jobs.update(job_id, progress=35, current_stage="aligning")
-            dependencies.jobs.update(job_id, progress=55, current_stage="diarizing")
+            if not text.strip():
+                raise empty_transcript()
+            alignment = dependencies.alignment
             diarizer = dependencies.diarization
-            if diarizer is None:
-                raise RuntimeError("Diarization adapter is unavailable")
-            segments = diarizer.diarize(
-                segments,
+            if alignment is None or diarizer is None:
+                raise RuntimeError("Diarization adapters are unavailable")
+            dependencies.jobs.update(job_id, progress=35, current_stage="aligning")
+            words = alignment.align(
+                audio_path, text=text, segments=segments, language=job.get("language"),
+            )
+            dependencies.jobs.update(job_id, progress=55, current_stage="diarizing")
+            turns = diarizer.diarize(
+                audio_path,
                 min_speakers=job.get("min_speakers"),
                 max_speakers=job.get("max_speakers"),
             )
+            if not turns:
+                raise no_speakers_detected()
             dependencies.jobs.update(job_id, progress=75, current_stage="attributing_speakers")
+            attribution = attribute_words(words, turns)
+            segments = attribution.segments
+            metadata["attribution_statistics"] = attribution.statistics
         dependencies.jobs.update(job_id, progress=90, processed_seconds=duration)
 
         if _stop_if_canceled(dependencies, job_id, job_root, audio_path):
@@ -210,11 +226,16 @@ def process_job(
             progress=95,
             current_stage="exporting",
         )
+        public_segments = [
+            {key: value for key, value in segment.items() if key != "words"}
+            for segment in segments
+        ]
         artifacts = dependencies.artifacts.write(
             job_id, output_dir=job_root / "result", text=text, language=job["language"],
             duration=duration, model=job["model"], output_script=output_script,
-            segments=segments, formats=tuple(job.get("output_formats", ("json", "txt", "srt"))),
+            segments=public_segments, formats=tuple(job.get("output_formats", ("json", "txt", "srt"))),
             job_type=job.get("job_type", "transcription"),
+            metadata=metadata,
         )
 
         if _stop_if_canceled(dependencies, job_id, job_root, audio_path):

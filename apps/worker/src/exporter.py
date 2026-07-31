@@ -23,7 +23,7 @@ def _write_text_durably(path: Path, content: str) -> None:
 def export_result(job_id: str, *, output_dir: Path, text: str, language: str | None,
                   duration: float, model: str, output_script: str,
                   segments: list[dict], formats: tuple[str, ...],
-                  job_type: str = "transcription") -> dict[str, Path]:
+                  job_type: str = "transcription", metadata: dict | None = None) -> dict[str, Path]:
     output_dir.parent.mkdir(parents=True, exist_ok=True)
     staging_dir = output_dir.with_name(f".{output_dir.name}.staging-{uuid4().hex}")
     try:
@@ -38,13 +38,14 @@ def export_result(job_id: str, *, output_dir: Path, text: str, language: str | N
                 "metadata": {
                     "provider": "faster-whisper", "model": model,
                     "output_script": output_script,
+                    **(metadata or {}),
                 },
             }, ensure_ascii=False, indent=2))
             paths["json"] = output_dir / json_path.name
         if "txt" in formats:
             txt_path = staging_dir / "transcript.txt"
             lines = [
-                f"[{segment['speaker']}] {segment['text']}" if job_type == "diarization" else segment["text"]
+                f"[{segment.get('speaker') or 'UNKNOWN'}] {segment['text']}" if job_type == "diarization" else segment["text"]
                 for segment in segments
             ]
             _write_text_durably(txt_path, ("\n".join(lines) if job_type == "diarization" else text) + "\n")
@@ -52,7 +53,7 @@ def export_result(job_id: str, *, output_dir: Path, text: str, language: str | N
         if "srt" in formats:
             srt_path = staging_dir / "transcript.srt"
             def line(segment: dict) -> str:
-                speaker = f"[{segment['speaker']}] " if job_type == "diarization" else ""
+                speaker = f"[{segment.get('speaker') or 'UNKNOWN'}] " if job_type == "diarization" else ""
                 return f"{segment['id'] + 1}\n{srt_timestamp(segment['start'])} --> {srt_timestamp(segment['end'])}\n{speaker}{segment['text']}\n"
             _write_text_durably(srt_path, "\n".join(
                 line(segment)
