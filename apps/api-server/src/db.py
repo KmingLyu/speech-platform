@@ -23,8 +23,9 @@ class PostgresJobRepository(JobRepository):
                 """
                 INSERT INTO transcription_jobs
                     (id, status, source_type, source_url, original_filename,
-                     source_path, model, language, output_script, output_formats)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     source_path, model, language, output_script, output_formats,
+                     job_type)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     job.id,
@@ -37,6 +38,7 @@ class PostgresJobRepository(JobRepository):
                     job.language,
                     job.output_script,
                     list(job.output_formats),
+                    job.job_type,
                 ),
             )
             conn.commit()
@@ -116,12 +118,15 @@ class PostgresJobRepository(JobRepository):
     def list(
         self,
         *,
+        job_type: str = "transcription",
         status: str | None,
         before: tuple[datetime, str] | None,
         limit: int,
     ) -> list[dict]:
         conditions: list[str] = []
         values: list[object] = []
+        conditions.append("job_type = %s")
+        values.append(job_type)
         if status is not None:
             conditions.append("status = %s")
             values.append(status)

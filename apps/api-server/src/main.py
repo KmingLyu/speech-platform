@@ -32,8 +32,28 @@ DEFAULT_LIST_LIMIT = 20
 MAX_LIST_LIMIT = 100
 
 
-def new_job_id() -> str:
-    return f"tr_{secrets.token_urlsafe(18)}"
+JOB_TYPE_PREFIXES = {"transcription": "tr_", "diarization": "di_"}
+
+
+def new_job_id(job_type: str = "transcription") -> str:
+    return f"{JOB_TYPE_PREFIXES[job_type]}{secrets.token_urlsafe(18)}"
+
+
+def require_job(job_repository: JobRepository, job_id: str, job_type: str) -> dict:
+    job = job_repository.get(job_id)
+    if (
+        job is None
+        or not job_id.startswith(JOB_TYPE_PREFIXES[job_type])
+        or job.get("job_type", "transcription") != job_type
+    ):
+        raise HTTPException(
+            404,
+            detail={
+                "code": "job_not_found",
+                "message": f"{job_type.capitalize()} job not found",
+            },
+        )
+    return job
 
 
 def ensure_youtube_url(url: str) -> None:
@@ -194,6 +214,7 @@ def job_summary(job: dict) -> dict:
         source["url"] = job["source_url"]
     return {
         "id": job["id"],
+        "job_type": job.get("job_type", "transcription"),
         "status": job["status"],
         "current_stage": job["current_stage"],
         "progress": job["progress"],
@@ -237,6 +258,7 @@ def job_payload(job: dict) -> dict:
     } if completed else {}
     return {
         "id": job["id"],
+        "job_type": job.get("job_type", "transcription"),
         "status": job["status"],
         "current_stage": job["current_stage"],
         "progress": job["progress"],
@@ -358,6 +380,7 @@ def create_app(
             job_repository.create(
                 NewTranscriptionJob(
                     id=job_id,
+                    job_type="transcription",
                     source_type="upload" if file else "youtube",
                     source_url=youtube_url,
                     original_filename=filename,
@@ -408,7 +431,9 @@ def create_app(
             )
         page_limit = parse_list_limit(limit)
         before = decode_cursor(cursor) if cursor is not None else None
-        page = job_repository.list(status=status, before=before, limit=page_limit)
+        page = job_repository.list(
+            job_type="transcription", status=status, before=before, limit=page_limit
+        )
         has_next = len(page) > page_limit
         items = page[:page_limit]
         next_cursor = (
@@ -423,12 +448,7 @@ def create_app(
         job_id: str,
         format: Literal["json", "txt", "srt"] | None = None,
     ):
-        job = job_repository.get(job_id)
-        if job is None:
-            raise HTTPException(
-                404,
-                detail={"code": "job_not_found", "message": "Transcription job not found"},
-            )
+        job = require_job(job_repository, job_id, "transcription")
         if format is None:
             return job_payload(job)
         if job["status"] != "completed":
@@ -453,11 +473,7 @@ def create_app(
 
     @application.post("/v1/transcriptions/{job_id}/retry", status_code=202)
     def retry_transcription(job_id: str):
-        if job_repository.get(job_id) is None:
-            raise HTTPException(
-                404,
-                detail={"code": "job_not_found", "message": "Transcription job not found"},
-            )
+        require_job(job_repository, job_id, "transcription")
         requeued = job_repository.retry(job_id)
         if requeued is None:
             raise HTTPException(
@@ -475,11 +491,7 @@ def create_app(
 
     @application.post("/v1/transcriptions/{job_id}/cancel")
     def cancel_transcription(job_id: str):
-        if job_repository.get(job_id) is None:
-            raise HTTPException(
-                404,
-                detail={"code": "job_not_found", "message": "Transcription job not found"},
-            )
+        require_job(job_repository, job_id, "transcription")
         canceled = job_repository.cancel(job_id)
         if canceled is None:
             raise HTTPException(
@@ -499,12 +511,7 @@ def create_app(
 
     @application.delete("/v1/transcriptions/{job_id}", status_code=204)
     def delete_transcription(job_id: str):
-        job = job_repository.get(job_id)
-        if job is None:
-            raise HTTPException(
-                404,
-                detail={"code": "job_not_found", "message": "Transcription job not found"},
-            )
+        job = require_job(job_repository, job_id, "transcription")
         if job["status"] not in {"completed", "failed", "canceled"}:
             raise HTTPException(
                 409,

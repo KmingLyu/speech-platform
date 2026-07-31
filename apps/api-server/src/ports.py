@@ -18,6 +18,7 @@ class NewTranscriptionJob:
     output_script: str
     output_formats: tuple[str, ...] = ("json", "txt", "srt")
     status: str = "queued"
+    job_type: str = "transcription"
 
     def as_record(self) -> dict:
         return asdict(self)
@@ -41,6 +42,7 @@ class JobRepository(Protocol):
     def list(
         self,
         *,
+        job_type: str = "transcription",
         status: str | None,
         before: tuple[datetime, str] | None,
         limit: int,
