@@ -106,6 +106,10 @@ _Avoid_: Display segment（為觀看而切分的最終字幕單位）
 由已完成 speaker attribution 的文字與時間資訊導出的單行字幕 cue，具有自己的 `start`、`end`、主要文字與可選 speaker；diarization 的對外 artifact 使用它，而不覆寫 ASR segment，並保留來源文字的時間範圍。
 _Avoid_: Line break（只是同一 cue 的排版）、ASR segment（辨識器原始輸出）
 
+**ASR-segment-first display segmentation**:
+以一個 ASR segment 作為 Display segment 的優先保留範圍，且 Display segment 不得跨越 ASR segment 邊界合併；未重切時保留 ASR segment 的完整時間範圍。只有 speaker 邊界、單行容量或其他不可違反的 display 規則要求時，才在其內重切；重切後的 cue 使用其首尾 word 的時間範圍。speaker 邊界必須切開，讓每個 Display segment 僅包含一位 speaker。單行容量原則上也必須符合，但保護詞可單獨超長以保留語意。句末標點在重切時用於選擇較自然的切點，但本身不強制建立新的 Display segment。
+_Avoid_: Sentence-first display segmentation（會在沒有必要時打散 ASR segment）
+
 **Timeline-preserving display segmentation**:
 將已 attribution 的文字分成 Display segment 時，每個 cue 僅採用既有的文字時間範圍，不因閱讀性或排版而延長、縮短或推移時間軸。
 _Avoid_: Readability timing adjustment（會改變來源時間軸）

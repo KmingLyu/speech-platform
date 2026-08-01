@@ -27,6 +27,32 @@ class AlignmentUnavailable(RuntimeError):
     """The preferred alignment strategy cannot process this input."""
 
 
+def associate_words_with_asr_segments(words: list[dict], segments: list[dict]) -> list[dict]:
+    """Retain each aligned word's source ASR segment for display segmentation."""
+    associated: list[dict] = []
+    for word in words:
+        word_start = float(word["start"])
+        word_end = float(word["end"])
+        overlaps = [
+            (
+                max(0.0, min(word_end, float(segment["end"])) - max(word_start, float(segment["start"]))),
+                -index,
+                segment,
+            )
+            for index, segment in enumerate(segments)
+        ]
+        if not overlaps:
+            raise AlignmentUnavailable("No ASR segments are available for word association")
+        _, _, source = max(overlaps, key=lambda item: (item[0], item[1]))
+        associated.append({
+            **word,
+            "asr_segment_id": source["id"],
+            "asr_segment_start": float(source["start"]),
+            "asr_segment_end": float(source["end"]),
+        })
+    return associated
+
+
 class WhisperWordAlignment:
     """Use word timestamps emitted by faster-whisper as the alignment seam."""
 

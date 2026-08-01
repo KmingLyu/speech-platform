@@ -1,6 +1,6 @@
 # Preserve attributed timestamps in diarized display segmentation
 
-**Status: accepted**
+**Status: superseded by ADR 0026**
 
 Diarization 的 Display segment 必須保留 speaker-attributed word 的既有時間範圍；字幕切割不得為最短顯示時長、最長 cue 時長、閱讀速率或相鄰 cue 的連續性而延長、縮短或推移時間。句末標點、speaker 邊界與行長是切割語意與排版規則，其中行長僅在句末標點分割後仍過長時適用；這取代 ADR 0023 中允許以文字比例估算 Display timing 的決定。
 

@@ -6,7 +6,12 @@ from typing import Protocol
 
 from .config import Settings
 from .failures import alignment_failed, classify_failure, empty_transcript, no_speakers_detected
-from .alignment import AlignmentEngine, AlignmentResult, AlignmentUnavailable
+from .alignment import (
+    AlignmentEngine,
+    AlignmentResult,
+    AlignmentUnavailable,
+    associate_words_with_asr_segments,
+)
 from .attribution import attribute_words
 from .diarizer import DiarizationEngine
 from .display_segments import display_segments
@@ -216,6 +221,13 @@ def process_job(
                 )
             if not alignment_result.words:
                 raise alignment_failed("No word timestamps were produced")
+            alignment_result = AlignmentResult(
+                words=associate_words_with_asr_segments(alignment_result.words, segments),
+                strategy=alignment_result.strategy,
+                language=alignment_result.language,
+                fallback_used=alignment_result.fallback_used,
+                fallback_reason=alignment_result.fallback_reason,
+            )
             dependencies.jobs.update(job_id, progress=55, current_stage="diarizing")
             turns = diarizer.diarize(
                 audio_path,

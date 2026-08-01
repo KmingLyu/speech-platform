@@ -1,5 +1,6 @@
 """Derive the single-line subtitle cues exported by Diarization jobs."""
 
+from itertools import groupby
 from math import ceil
 import re
 from unicodedata import east_asian_width
@@ -73,40 +74,36 @@ def _boundary_priority(words: list[dict], cut: int) -> tuple[int, float]:
     return priority, visual_units("".join(word["text"] for word in words[:cut]).strip())
 
 
-def display_segments(
-    words: list[dict], *, max_chars_per_line: int,
-) -> list[dict]:
-    """Split attributed words into sequential, single-line public subtitle cues.
-
-    Speaker-labelled text stays in speaker-consistent cues. Reliable speaker
-    changes are therefore inviolable boundaries. Attribution fills every word
-    before this stage, so each cue has a concrete speaker label.
-    Sentence-ending punctuation creates a cue before line capacity is considered.
-    Within a sentence, line capacity prefers punctuation and pause boundaries.
-    A single protected word may exceed capacity so names, numbers, and hyphenated
-    terms remain intact.
-    """
+def display_segments(words: list[dict], *, max_chars_per_line: int) -> list[dict]:
+    """Derive single-speaker cues without crossing ASR segment boundaries."""
     cues: list[dict] = []
-    current: list[dict] = []
-    display_words = [
-        display_word
-        for word in words
-        for display_word in _split_overlong_word(word, max_chars_per_line)
-    ]
+    display_words: list[dict] = []
+    for word in words:
+        split_words = _split_overlong_word(word, max_chars_per_line)
+        display_words.extend(
+            {**display_word, "_split_for_display": len(split_words) > 1}
+            for display_word in split_words
+        )
 
-    def emit(words_to_emit: list[dict]) -> None:
+    def emit(words_to_emit: list[dict], *, preserve_asr_timing: bool = False) -> None:
         if not words_to_emit:
             return
+        start = words_to_emit[0]["start"]
+        end = words_to_emit[-1]["end"]
+        if preserve_asr_timing:
+            start = words_to_emit[0].get("asr_segment_start", start)
+            end = words_to_emit[-1].get("asr_segment_end", end)
         cues.append({
             "id": len(cues),
-            "start": words_to_emit[0]["start"],
-            "end": words_to_emit[-1]["end"],
+            "start": start,
+            "end": end,
             "speaker": words_to_emit[0]["speaker"],
             "text": "".join(word["text"] for word in words_to_emit).strip(),
         })
 
-    def emit_sentence(words_to_emit: list[dict]) -> None:
+    def emit_with_capacity(words_to_emit: list[dict], *, preserve_asr_timing: bool) -> None:
         remaining = words_to_emit
+        split_for_capacity = False
         while len(remaining) > 1:
             text = "".join(item["text"] for item in remaining).strip()
             label_units = visual_units(_visible_label(remaining[0]["speaker"]))
@@ -122,6 +119,7 @@ def display_segments(
             if not cuts_that_fit:
                 emit(remaining[:1])
                 remaining = remaining[1:]
+                split_for_capacity = True
                 continue
             cut = max(
                 cuts_that_fit,
@@ -129,19 +127,21 @@ def display_segments(
             )
             emit(remaining[:cut])
             remaining = remaining[cut:]
-        emit(remaining)
+            split_for_capacity = True
+        emit(remaining, preserve_asr_timing=preserve_asr_timing and not split_for_capacity)
 
-    for word in display_words:
-        if current and current[-1]["speaker"] != word["speaker"]:
-            emit_sentence(current)
-            current = []
-
-        current.append(word)
-        if current and current[-1]["text"].rstrip().endswith(
-            ("。", "！", "？", ".", "!", "?"),
-        ):
-            emit_sentence(current)
-            current = []
-
-    emit_sentence(current)
+    for _, source_words_iter in groupby(
+        display_words,
+        key=lambda word: word.get("asr_segment_id", "__ungrouped__"),
+    ):
+        source_words = list(source_words_iter)
+        source_was_split = any(word["_split_for_display"] for word in source_words)
+        for _, speaker_words_iter in groupby(source_words, key=lambda word: word["speaker"]):
+            speaker_words = list(speaker_words_iter)
+            emit_with_capacity(
+                speaker_words,
+                preserve_asr_timing=(
+                    len(speaker_words) == len(source_words) and not source_was_split
+                ),
+            )
     return cues

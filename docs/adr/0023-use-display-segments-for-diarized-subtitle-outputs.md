@@ -1,6 +1,6 @@
 # Use display segments for diarized subtitle outputs
 
-**Status: accepted**
+**Status: superseded by ADR 0026**
 
 Diarization will retain ASR segments and alignment data as internal work data, but derive separate single-line Display segments before exporting every diarized JSON, TXT, SRT, and future VTT artifact. This preserves the recognizer's source data while making the user-facing subtitles fit video presentation; the same transformation deliberately does not apply to the standalone transcription workflow, whose existing timeline and artifacts remain unchanged until a separate decision is made.
 
