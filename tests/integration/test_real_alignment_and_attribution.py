@@ -32,7 +32,7 @@ def test_word_attribution_regroups_crossing_asr_segment_sequentially() -> None:
     assert "diarization_turns" not in payload
 
 
-def test_partial_word_attribution_is_publicly_unknown_and_records_statistics() -> None:
+def test_partial_word_attribution_is_inferred_and_records_statistics() -> None:
     with httpx.Client(base_url=API_URL) as client:
         location = _create_diarization(client)
         run_fake_worker(env={"FAKE_SCENARIO": "partial-attribution"})
@@ -42,15 +42,18 @@ def test_partial_word_attribution_is_publicly_unknown_and_records_statistics() -
         srt = client.get(f"{location}?format=srt").text
 
     assert [segment["speaker"] for segment in payload["segments"]] == [
-        "SPEAKER_00", None, "SPEAKER_01"
+        "SPEAKER_00", "SPEAKER_01"
     ]
     assert payload["metadata"]["attribution_statistics"] == {
         "word_count": 3,
-        "attributed_word_count": 2,
-        "unattributed_word_count": 1,
+        "attributed_word_count": 3,
+        "unattributed_word_count": 0,
+        "inferred_word_count": 1,
     }
-    assert "[UNKNOWN] mystery" in txt
-    assert "[UNKNOWN] mystery" in srt
+    assert "[UNKNOWN]" not in txt
+    assert "[UNKNOWN]" not in srt
+    assert "[SPEAKER_01] mystery goodbye" in txt
+    assert "[SPEAKER_01] mystery goodbye" in srt
 
 
 def test_display_artifacts_split_at_capacity_and_reliable_speaker_changes() -> None:

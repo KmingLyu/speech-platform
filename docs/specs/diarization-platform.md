@@ -117,13 +117,13 @@ The JSON artifact keeps the existing root envelope and adds:
 }
 ```
 
-The public schema is Display-segment-level only. Internal ASR segments and word timestamps are used for attribution and display timing but are not exported. JSON `segments[].text` is main spoken text and `segments[].speaker` is the separate speaker value; JSON top-level `text` remains plain text. TXT, SRT, and future VTT render each final cue on one line as `[SPEAKER_00] main spoken text`; a null speaker renders as `[UNKNOWN]`. The visible label counts toward `max_chars_per_line`.
+The public schema is Display-segment-level only. Internal ASR segments and word timestamps are used for attribution and display timing but are not exported. JSON `segments[].text` is main spoken text and `segments[].speaker` is the separate speaker value; JSON top-level `text` remains plain text. TXT, SRT, and future VTT render each final cue on one line as `[SPEAKER_00] main spoken text`; every final cue has a concrete speaker label. The visible label counts toward `max_chars_per_line`.
 
 ## Failure behavior
 
 - `empty_transcript`: permanent failure for diarization jobs.
 - `no_speakers_detected`: permanent failure.
-- Partial attribution gaps: complete with `speaker: null` and attribution statistics.
+- Partial attribution gaps: complete with deterministic inferred speaker labels and `attribution_statistics.inferred_word_count`.
 - Alignment failure with usable Whisper timestamps: complete with fallback metadata.
 - Missing attributed word timestamps: permanent alignment failure.
 - Missing model/deployment failures: retryable and never silently switch model revision.

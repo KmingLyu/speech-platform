@@ -1,6 +1,6 @@
 # Use word-level alignment for speaker attribution
 
-**Status: accepted**
+**Status: superseded by ADR 0025**
 
 The diarization pipeline will internally use word-level forced alignment before assigning speaker turns, then merge adjacent words into speaker-consistent segment-level output. The public JSON will expose segment-level results only; it will not expose word-level timestamps or word-level speaker labels in the first version.
 

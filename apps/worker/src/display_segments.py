@@ -79,8 +79,8 @@ def display_segments(
     """Split attributed words into sequential, single-line public subtitle cues.
 
     Speaker-labelled text stays in speaker-consistent cues. Reliable speaker
-    changes are therefore inviolable boundaries; attribution gaps also remain
-    separate so an unknown word is never shown under a known speaker label.
+    changes are therefore inviolable boundaries. Attribution fills every word
+    before this stage, so each cue has a concrete speaker label.
     Sentence-ending punctuation creates a cue before line capacity is considered.
     Within a sentence, line capacity prefers punctuation and pause boundaries.
     A single protected word may exceed capacity so names, numbers, and hyphenated

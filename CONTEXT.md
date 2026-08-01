@@ -135,5 +135,9 @@ _Avoid_: Speaker segment（容易與 Transcription 的 Segment 混淆）
 _Avoid_: Synchronization（過於籠統，無法表達文字與 speaker 時間的對應）
 
 **Diarized transcript**:
-由 Diarization 產生的 Transcript，由 Display segment 組成，除文字與時間外還包含匿名 speaker label；speaker label 只在單一 job 內有效。
+由 Diarization 產生的 Transcript，由 Display segment 組成，除文字與時間外還包含匿名 speaker label；每個 word 最終都會歸屬於某個處理範圍內的 speaker，speaker label 只在單一 job 內有效。
 _Avoid_: Identified transcript（不代表真實身份）
+
+**Inferred speaker attribution**:
+當 word 無法由 speaker turn 直接可靠地歸屬時，根據時間距離與前後 attribution 規則補上的匿名 speaker label；它仍然只在單一 Diarization job 內有效，且不代表真實人物身份。
+_Avoid_: Speaker identification（本專案不辨識真實人物身份）、Unknown speaker（對外結果不保留 UNKNOWN）
