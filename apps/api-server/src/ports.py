@@ -23,6 +23,7 @@ class NewTranscriptionJob:
     max_speakers: int | None = None
     diarization_model: str | None = None
     diarization_model_revision: str | None = None
+    max_chars_per_line: int | None = None
 
     def as_record(self) -> dict:
         return asdict(self)

@@ -195,6 +195,25 @@ def attempts_payload(job: dict) -> dict:
     }
 
 
+def job_configuration(job: dict) -> dict:
+    output_formats = set(job.get("output_formats") or ("json", "txt", "srt"))
+    configuration = {
+        "model": job["model"],
+        "language": job["language"],
+        "output_script": job["output_script"],
+        "formats": sorted(output_formats),
+    }
+    if job.get("job_type") == "diarization":
+        configuration.update({
+            "min_speakers": job.get("min_speakers"),
+            "max_speakers": job.get("max_speakers"),
+            "diarization_model": job.get("diarization_model"),
+            "diarization_model_revision": job.get("diarization_model_revision"),
+            "max_chars_per_line": job.get("max_chars_per_line"),
+        })
+    return configuration
+
+
 def job_summary(job: dict) -> dict:
     resource = "diarizations" if job.get("job_type", "transcription") == "diarization" else "transcriptions"
     output_formats = set(job.get("output_formats") or ("json", "txt", "srt"))
@@ -213,17 +232,6 @@ def job_summary(job: dict) -> dict:
         source["filename"] = job["original_filename"]
     if job.get("source_url"):
         source["url"] = job["source_url"]
-    configuration = {
-        "model": job["model"],
-        "language": job["language"],
-        "output_script": job["output_script"],
-        "formats": sorted(output_formats),
-    }
-    if job.get("job_type") == "diarization":
-        configuration["min_speakers"] = job.get("min_speakers")
-        configuration["max_speakers"] = job.get("max_speakers")
-        configuration["diarization_model"] = job.get("diarization_model")
-        configuration["diarization_model_revision"] = job.get("diarization_model_revision")
     return {
         "id": job["id"],
         "job_type": job.get("job_type", "transcription"),
@@ -231,7 +239,7 @@ def job_summary(job: dict) -> dict:
         "current_stage": job["current_stage"],
         "progress": job["progress"],
         "source": source,
-        "configuration": configuration,
+        "configuration": job_configuration(job),
         "timing": {
             "duration": job["duration"],
             "processed_seconds": job["processed_seconds"],
@@ -264,17 +272,6 @@ def job_payload(job: dict) -> dict:
         format: f"/v1/{resource}/{job['id']}?format={format}"
         for format in sorted(output_formats)
     } if completed else {}
-    configuration = {
-        "model": job["model"],
-        "language": job["language"],
-        "output_script": job["output_script"],
-        "formats": sorted(output_formats),
-    }
-    if job.get("job_type") == "diarization":
-        configuration["min_speakers"] = job.get("min_speakers")
-        configuration["max_speakers"] = job.get("max_speakers")
-        configuration["diarization_model"] = job.get("diarization_model")
-        configuration["diarization_model_revision"] = job.get("diarization_model_revision")
     return {
         "id": job["id"],
         "job_type": job.get("job_type", "transcription"),
@@ -282,7 +279,7 @@ def job_payload(job: dict) -> dict:
         "current_stage": job["current_stage"],
         "progress": job["progress"],
         "source": {"type": job["source_type"]},
-        "configuration": configuration,
+        "configuration": job_configuration(job),
         "timing": {
             "duration": job["duration"],
             "processed_seconds": job["processed_seconds"],
@@ -312,6 +309,13 @@ def normalize_speaker_bounds(min_speakers: int | None, max_speakers: int | None)
     if min_speakers is not None and max_speakers is not None and min_speakers > max_speakers:
         raise HTTPException(422, detail={"code": "invalid_speaker_bounds", "message": "min_speakers must not exceed max_speakers"})
     return min_speakers, max_speakers
+
+
+def normalize_max_chars_per_line(value: int | None) -> int:
+    resolved = 20 if value is None else value
+    if resolved < 1:
+        raise HTTPException(422, detail={"code": "invalid_max_chars_per_line", "message": "max_chars_per_line must be positive"})
+    return resolved
 
 
 def create_app(
@@ -451,6 +455,7 @@ def create_app(
         formats: Annotated[list[str] | None, Form()] = None,
         min_speakers: Annotated[int | None, Form()] = None,
         max_speakers: Annotated[int | None, Form()] = None,
+        max_chars_per_line: Annotated[int | None, Form()] = None,
     ):
         if (file is None) == (youtube_url is None):
             raise HTTPException(422, detail={"code": "invalid_source", "message": "Provide exactly one of file or youtube_url"})
@@ -461,6 +466,7 @@ def create_app(
             raise HTTPException(422, detail={"code": "model_not_supported", "message": "Unsupported model"})
         normalized_formats = normalize_formats(formats)
         min_speakers, max_speakers = normalize_speaker_bounds(min_speakers, max_speakers)
+        max_chars_per_line = normalize_max_chars_per_line(max_chars_per_line)
         if not resolved_settings.diarization_model_revision:
             raise HTTPException(
                 503,
@@ -485,6 +491,7 @@ def create_app(
                 max_speakers=max_speakers,
                 diarization_model=resolved_settings.diarization_model,
                 diarization_model_revision=resolved_settings.diarization_model_revision,
+                max_chars_per_line=max_chars_per_line,
             ))
         except UploadTooLarge:
             job_storage.remove_job(job_id)

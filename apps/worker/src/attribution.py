@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class AttributionResult:
-    segments: list[dict]
+    words: list[dict]
     statistics: dict[str, int]
 
 
@@ -25,22 +25,9 @@ def _speaker_for_word(word: dict, turns: list[dict]) -> str | None:
 
 def attribute_words(words: list[dict], turns: list[dict]) -> AttributionResult:
     attributed = [{**word, "speaker": _speaker_for_word(word, turns)} for word in words]
-    segments: list[dict] = []
-    for word in attributed:
-        if segments and segments[-1]["speaker"] == word["speaker"]:
-            segments[-1]["end"] = word["end"]
-            segments[-1]["text"] += word["text"]
-        else:
-            segments.append({
-                "id": len(segments),
-                "start": word["start"],
-                "end": word["end"],
-                "speaker": word["speaker"],
-                "text": word["text"].strip(),
-            })
     attributed_count = sum(word["speaker"] is not None for word in attributed)
     return AttributionResult(
-        segments=segments,
+        words=attributed,
         statistics={
             "word_count": len(words),
             "attributed_word_count": attributed_count,

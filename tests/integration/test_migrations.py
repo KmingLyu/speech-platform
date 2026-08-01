@@ -65,6 +65,7 @@ def test_schema_migrations_are_repeatable_on_clean_database() -> None:
         ("005_add_job_type.sql",),
         ("006_add_diarization_bounds.sql",),
         ("007_add_diarization_model_revision.sql",),
+        ("008_add_diarization_display_line_capacity.sql",),
     ]
 
 
@@ -98,6 +99,7 @@ def test_schema_migrations_upgrade_existing_database() -> None:
         ("005_add_job_type.sql",),
         ("006_add_diarization_bounds.sql",),
         ("007_add_diarization_model_revision.sql",),
+        ("008_add_diarization_display_line_capacity.sql",),
     ]
 
 

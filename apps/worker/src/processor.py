@@ -9,6 +9,7 @@ from .failures import alignment_failed, classify_failure, empty_transcript, no_s
 from .alignment import AlignmentEngine, AlignmentResult, AlignmentUnavailable
 from .attribution import attribute_words
 from .diarizer import DiarizationEngine
+from .display_segments import display_segments
 
 
 logger = logging.getLogger(__name__)
@@ -225,7 +226,11 @@ def process_job(
                 raise no_speakers_detected()
             dependencies.jobs.update(job_id, progress=75, current_stage="attributing_speakers")
             attribution = attribute_words(alignment_result.words, turns)
-            segments = attribution.segments
+            dependencies.jobs.update(job_id, progress=85, current_stage="segmenting_for_display")
+            segments = display_segments(
+                attribution.words,
+                max_chars_per_line=job.get("max_chars_per_line", 20),
+            )
             speakers = sorted({turn["speaker"] for turn in turns})
             metadata.update({
                 "alignment_strategy": alignment_result.strategy,

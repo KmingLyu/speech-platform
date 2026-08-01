@@ -25,8 +25,8 @@ class PostgresJobRepository(JobRepository):
                     (id, status, source_type, source_url, original_filename,
                      source_path, model, language, output_script, output_formats,
                      job_type, min_speakers, max_speakers,
-                     diarization_model, diarization_model_revision)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     diarization_model, diarization_model_revision, max_chars_per_line)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     job.id,
@@ -44,6 +44,7 @@ class PostgresJobRepository(JobRepository):
                     job.max_speakers,
                     job.diarization_model,
                     job.diarization_model_revision,
+                    job.max_chars_per_line,
                 ),
             )
             conn.commit()

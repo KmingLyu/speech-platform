@@ -113,6 +113,21 @@ class FakeTranscriptionEngine(TranscriptionEngine):
                     {"start": 2.0, "end": 3.0, "text": " goodbye"},
                 ],
             }]
+        if scenario == "display-segments":
+            return "Hello there again world", [{
+                "id": 0, "start": 0.0, "end": 4.0, "text": "Hello there again world",
+                "words": [
+                    {"start": 0.0, "end": 1.0, "text": "Hello"},
+                    {"start": 1.0, "end": 2.0, "text": " there"},
+                    {"start": 2.0, "end": 3.0, "text": " again"},
+                    {"start": 3.0, "end": 4.0, "text": " world"},
+                ],
+            }]
+        if scenario == "display-timing":
+            return "abcdefghijkl", [{
+                "id": 0, "start": 0.0, "end": 0.5, "text": "abcdefghijkl",
+                "words": [{"start": 0.0, "end": 0.5, "text": "abcdefghijkl"}],
+            }]
         return (
             "A deterministic transcript.",
             [{
@@ -139,6 +154,13 @@ class ControlledDiarizationEngine(DiarizationEngine):
                 {"start": 0.0, "end": 1.1, "speaker": "SPEAKER_00"},
                 {"start": 2.2, "end": 3.0, "speaker": "SPEAKER_01"},
             ]
+        if scenario == "display-segments":
+            return [
+                {"start": 0.0, "end": 2.0, "speaker": "SPEAKER_00"},
+                {"start": 2.0, "end": 4.0, "speaker": "SPEAKER_01"},
+            ]
+        if scenario == "display-timing":
+            return [{"start": 0.0, "end": 0.5, "speaker": "SPEAKER_00"}]
         return [{"start": 0.0, "end": 12.5, "speaker": "SPEAKER_00"}]
 
 
