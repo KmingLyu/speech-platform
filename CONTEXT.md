@@ -109,3 +109,19 @@ _Avoid_: Transcription type（格式不是不同的辨識類型）
 **Derived task**:
 以既有 Transcript 或其時間資訊為輸入的後續處理，例如 speaker diarization、translation 或 summary。目前不屬於產品範圍，未決定其是否能獨立重跑。
 _Avoid_: Feature（無法表達它和 Transcription 的依賴關係）
+
+**Diarization**:
+將一個 Source 的語音切分為 speaker turns，為每段語音賦予同一個處理範圍內有效的匿名 speaker label；本專案的 diarization API 會先完成 Transcription，再執行 diarization 與 alignment。
+_Avoid_: Speaker identification（本專案不辨識真實人物身份）
+
+**Speaker turn**:
+由同一位 speaker 連續說話所形成的語音時間區間；它是 diarization 的時間結果，不等同於 Whisper 的 Segment。
+_Avoid_: Speaker segment（容易與 Transcription 的 Segment 混淆）
+
+**Alignment**:
+將 Transcript 的文字單位與音訊時間軸及 speaker turns 對齊的處理；內部可使用 word-level 時間資訊，但對外結果目前只公開重新合併後的 Segment。
+_Avoid_: Synchronization（過於籠統，無法表達文字與 speaker 時間的對應）
+
+**Diarized transcript**:
+由 Diarization 產生的 Transcript，除 Segment 的文字與時間外，還包含匿名 speaker label；speaker label 只在單一 job 內有效。
+_Avoid_: Identified transcript（不代表真實身份）
