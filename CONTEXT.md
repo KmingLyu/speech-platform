@@ -98,6 +98,14 @@ _Avoid_: Translation（文字系統轉換不改變語意，也不是翻譯）
 Transcription 中一段連續語音及其文字，至少包含 `start`、`end` 與 `text`；目前時間軸粒度只到 segment，不包含逐詞時間。
 _Avoid_: Word timestamp（尚未納入目前範圍）
 
+**ASR segment**:
+faster-whisper 產生的原始 transcription 片段，保留辨識器給出的文字與時間，並可在內部帶有 word timestamps；它不是 diarization 對外下載 artifact 的字幕單位。
+_Avoid_: Display segment（為觀看而切分的最終字幕單位）
+
+**Display segment**:
+由已完成 speaker attribution 的文字與時間資訊導出的單行字幕 cue，具有自己的 `start`、`end`、主要文字與可選 speaker；diarization 的對外 artifact 使用它，而不覆寫 ASR segment。
+_Avoid_: Line break（只是同一 cue 的排版）、ASR segment（辨識器原始輸出）
+
 **Transcript artifact**:
 由 Transcription job 產生、可供下載的特定格式 Transcript，例如 JSON、TXT 或 SRT。
 _Avoid_: Result（可作一般描述，但正式領域詞使用 artifact 以強調格式化產物）
@@ -123,5 +131,5 @@ _Avoid_: Speaker segment（容易與 Transcription 的 Segment 混淆）
 _Avoid_: Synchronization（過於籠統，無法表達文字與 speaker 時間的對應）
 
 **Diarized transcript**:
-由 Diarization 產生的 Transcript，除 Segment 的文字與時間外，還包含匿名 speaker label；speaker label 只在單一 job 內有效。
+由 Diarization 產生的 Transcript，由 Display segment 組成，除文字與時間外還包含匿名 speaker label；speaker label 只在單一 job 內有效。
 _Avoid_: Identified transcript（不代表真實身份）

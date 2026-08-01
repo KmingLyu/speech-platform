@@ -12,7 +12,7 @@ Completed results should record the selected `alignment_strategy`, the `alignmen
 
 Transcription and diarization JSON artifacts share the existing root-level `schema_version` field. Diarization must not add a second `metadata.schema_version`; it extends the existing envelope with speaker fields and attribution metadata while preserving compatibility for current transcription consumers.
 
-The processing stages follow WhisperX's proven sequence: `transcribing` → `aligning` → `diarizing` → `attributing_speakers` → `exporting`. Alignment produces word timestamps, diarization produces speaker turns, and attribution reconciles the two timelines before the public segment-level artifact is written.
+The processing stages follow WhisperX's proven sequence: `transcribing` → `aligning` → `diarizing` → `attributing_speakers` → `exporting`. Alignment produces word timestamps, diarization produces speaker turns, and attribution reconciles the two timelines before the public segment-level artifact is written. ADR 0023 subsequently adds `segmenting_for_display` between attribution and exporting for diarization subtitles; it does not change this attribution decision.
 
 Speaker attribution may produce `speaker: null` when an aligned word or regrouped segment has no reliable overlap with a diarization turn. The first version will preserve that uncertainty instead of assigning the nearest or previous speaker. If the null rate is too high on real fixtures, the replaceable attribution strategy may later enable nearest-speaker filling or switch to Whisper Segment-level attribution.
 
