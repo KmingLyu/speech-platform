@@ -20,7 +20,7 @@ from src.processor import (
     process_job,
 )
 from src.repository import claim_next_job
-from src.alignment import WhisperWordAlignment
+from src.alignment import ForcedAlignmentWithWhisperFallback, WhisperWordAlignment
 from src.diarizer import DiarizationEngine
 
 
@@ -152,6 +152,12 @@ class IdentityTranscriptConverter(TranscriptConverter):
         return text, segments
 
 
+class FailingForcedAlignment:
+    def align(self, audio_path: Path, *, text: str, segments: list[dict], language: str | None):
+        del audio_path, text, segments, language
+        raise RuntimeError("fake forced alignment model unavailable")
+
+
 class CancelSimulatingArtifactWriter(ArtifactWriter):
     """Wraps the real writer so 'export' cancellation can be simulated mid-stage."""
 
@@ -200,7 +206,11 @@ def main() -> None:
         artifacts=CancelSimulatingArtifactWriter(
             FilesystemArtifactWriter(), settings=settings, job_id=job_id, cancel_at=cancel_at,
         ),
-        alignment=WhisperWordAlignment(),
+        alignment=(
+            ForcedAlignmentWithWhisperFallback(FailingForcedAlignment(), WhisperWordAlignment())
+            if os.getenv("FAKE_SCENARIO") == "forced-alignment-fallback"
+            else WhisperWordAlignment()
+        ),
         diarization=ControlledDiarizationEngine(),
     )
     process_job(settings, dependencies, job)

@@ -15,7 +15,7 @@ from .script_converter import OutputScript, convert_segments, convert_text
 from .source import acquire_source
 from .transcriber import Transcriber
 from .diarizer import PyannoteCommunityDiarization
-from .alignment import WhisperWordAlignment
+from .alignment import ForcedAlignmentWithWhisperFallback, WhisperWordAlignment
 
 
 class ProductionSourceAcquirer(SourceAcquirer):
@@ -54,6 +54,10 @@ def production_dependencies(settings: Settings) -> WorkerDependencies:
         transcription=transcription,
         converter=ProductionTranscriptConverter(),
         artifacts=FilesystemArtifactWriter(),
-        alignment=WhisperWordAlignment(),
-        diarization=PyannoteCommunityDiarization(),
+        alignment=ForcedAlignmentWithWhisperFallback(None, WhisperWordAlignment()),
+        diarization=PyannoteCommunityDiarization(
+            model=settings.diarization_model,
+            revision=settings.diarization_model_revision,
+            model_root=settings.model_root,
+        ),
     )

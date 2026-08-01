@@ -13,6 +13,8 @@ class Settings:
     data_root: Path
     max_upload_size_bytes: int
     supported_models: frozenset[str] = frozenset({DEFAULT_MODEL})
+    diarization_model: str = "pyannote/speaker-diarization-community-1"
+    diarization_model_revision: str | None = None
 
 
 def load_settings() -> Settings:
@@ -27,4 +29,8 @@ def load_settings() -> Settings:
         data_root=Path(os.getenv("DATA_ROOT", "/data")),
         max_upload_size_bytes=max_upload_size_mb * 1024 * 1024,
         supported_models=supported_models,
+        diarization_model=os.getenv(
+            "DIARIZATION_MODEL", "pyannote/speaker-diarization-community-1"
+        ),
+        diarization_model_revision=os.getenv("DIARIZATION_MODEL_REVISION"),
     )

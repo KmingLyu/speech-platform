@@ -21,5 +21,6 @@ COPY apps/worker/requirements.txt ./requirements.txt
 RUN pip3 install --no-cache-dir --pre -r requirements.txt
 
 COPY apps/worker/src ./src
+COPY scripts/prepare-diarization-model.py scripts/smoke-diarization-model.py ./scripts/
 
 CMD ["python3", "-m", "src.main"]

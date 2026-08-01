@@ -24,8 +24,9 @@ class PostgresJobRepository(JobRepository):
                 INSERT INTO transcription_jobs
                     (id, status, source_type, source_url, original_filename,
                      source_path, model, language, output_script, output_formats,
-                     job_type, min_speakers, max_speakers)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     job_type, min_speakers, max_speakers,
+                     diarization_model, diarization_model_revision)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     job.id,
@@ -41,6 +42,8 @@ class PostgresJobRepository(JobRepository):
                     job.job_type,
                     job.min_speakers,
                     job.max_speakers,
+                    job.diarization_model,
+                    job.diarization_model_revision,
                 ),
             )
             conn.commit()

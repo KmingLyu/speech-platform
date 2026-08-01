@@ -5,6 +5,7 @@ from .config import load_settings
 from .dependencies import production_dependencies
 from .processor import process_job
 from .repository import claim_next_job
+from .model_registry import validate_pinned_model
 
 
 def main() -> None:
@@ -12,6 +13,7 @@ def main() -> None:
     settings = load_settings()
     settings.data_root.mkdir(parents=True, exist_ok=True)
     settings.model_root.mkdir(parents=True, exist_ok=True)
+    validate_pinned_model(settings)
     dependencies = production_dependencies(settings)
     logging.info("worker %s started", settings.worker_id)
     while True:

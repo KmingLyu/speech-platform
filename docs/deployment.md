@@ -45,6 +45,8 @@ DATABASE_URL=postgresql://speech_asr:<same-password>@postgres:5432/speech_asr
 | `MAX_ATTEMPTS` | `3` | retryable failure 的 bounded automatic retry budget |
 | `HEARTBEAT_INTERVAL_SECONDS` | `5` | Worker heartbeat 頻率 |
 | `STALE_TIMEOUT_SECONDS` | `30` | 判定 Worker loss 的 processing heartbeat timeout |
+| `DIARIZATION_MODEL` | `pyannote/speaker-diarization-community-1` | pyannote Community-1 repository |
+| `DIARIZATION_MODEL_REVISION` | 必填 | immutable Hugging Face revision；不可使用 latest |
 
 Language preference 由 API 驗證；未指定時自動偵測，`zh-tw` 與 `zh-cn` 分別套用繁體台灣及簡體中國大陸輸出。MVP 不啟用自動 retention：Source、work、artifact 與 metadata 會保留到使用者以 `DELETE /v1/transcriptions/{id}` 刪除 terminal job。
 
@@ -86,6 +88,23 @@ Smoke check（不需要 GPU 或外部網路）請執行：
 此流程使用 internal-only network、隔離 PostgreSQL、temporary storage 與 deterministic fake Worker，會驗證 submit、list、poll、complete、artifact download、retry、cancellation 與 deletion。既有資料庫升級也包含在 migration tests 中；若要做真實 GPU 驗證，請完成下節的 manual smoke。
 
 ## 3. Manual GPU smoke
+
+Before accepting diarization jobs, download and validate the configured pinned
+revision. Keep the previous revision directory beside the new one for rollback:
+
+```bash
+docker compose run --rm worker python3 scripts/prepare-diarization-model.py
+docker compose restart worker
+```
+
+For a real-model smoke test, use a short authorized local recording. This is
+separate from CI's deterministic fake-worker suite:
+
+```bash
+docker compose run --rm \
+  -e AUTHORIZED_AUDIO_FIXTURE=/data/fixtures/short-authorized.wav \
+  worker python3 scripts/smoke-diarization-model.py
+```
 
 在實際 GPU host 上先確認 `nvidia-smi`，再提交一段短、已獲授權的本地 audio/video fixture：
 

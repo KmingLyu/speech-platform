@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Protocol
 
 from .config import Settings
-from .failures import classify_failure, empty_transcript, no_speakers_detected
-from .alignment import AlignmentEngine
+from .failures import alignment_failed, classify_failure, empty_transcript, no_speakers_detected
+from .alignment import AlignmentEngine, AlignmentResult, AlignmentUnavailable
 from .attribution import attribute_words
 from .diarizer import DiarizationEngine
 
@@ -201,9 +201,20 @@ def process_job(
             if alignment is None or diarizer is None:
                 raise RuntimeError("Diarization adapters are unavailable")
             dependencies.jobs.update(job_id, progress=35, current_stage="aligning")
-            words = alignment.align(
-                audio_path, text=text, segments=segments, language=job.get("language"),
-            )
+            try:
+                alignment_result = alignment.align(
+                    audio_path, text=text, segments=segments, language=job.get("language"),
+                )
+            except AlignmentUnavailable as error:
+                raise alignment_failed(str(error)) from error
+            if isinstance(alignment_result, list):
+                alignment_result = AlignmentResult(
+                    words=alignment_result,
+                    strategy="whisper_word_timestamps",
+                    language=job.get("language"),
+                )
+            if not alignment_result.words:
+                raise alignment_failed("No word timestamps were produced")
             dependencies.jobs.update(job_id, progress=55, current_stage="diarizing")
             turns = diarizer.diarize(
                 audio_path,
@@ -213,9 +224,20 @@ def process_job(
             if not turns:
                 raise no_speakers_detected()
             dependencies.jobs.update(job_id, progress=75, current_stage="attributing_speakers")
-            attribution = attribute_words(words, turns)
+            attribution = attribute_words(alignment_result.words, turns)
             segments = attribution.segments
-            metadata["attribution_statistics"] = attribution.statistics
+            speakers = sorted({turn["speaker"] for turn in turns})
+            metadata.update({
+                "alignment_strategy": alignment_result.strategy,
+                "alignment_language": alignment_result.language,
+                "fallback_used": alignment_result.fallback_used,
+                "fallback_reason": alignment_result.fallback_reason,
+                "diarization_model": job.get("diarization_model"),
+                "diarization_model_revision": job.get("diarization_model_revision"),
+                "speaker_count": len(speakers),
+                "speakers": speakers,
+                "attribution_statistics": attribution.statistics,
+            })
         dependencies.jobs.update(job_id, progress=90, processed_seconds=duration)
 
         if _stop_if_canceled(dependencies, job_id, job_root, audio_path):

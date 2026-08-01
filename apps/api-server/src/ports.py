@@ -21,6 +21,8 @@ class NewTranscriptionJob:
     job_type: str = "transcription"
     min_speakers: int | None = None
     max_speakers: int | None = None
+    diarization_model: str | None = None
+    diarization_model_revision: str | None = None
 
     def as_record(self) -> dict:
         return asdict(self)

@@ -48,10 +48,30 @@ def test_diarization_fake_pipeline_exposes_isolated_speaker_artifacts() -> None:
         artifact = client.get(f"{location}?format=json")
         payload = artifact.json()
         assert payload["artifact_type"] == "diarized_transcript"
+        assert payload["schema_version"] == "1.0"
         assert payload["text"] == "A deterministic transcript."
+        assert payload["metadata"]["diarization_model_revision"] == "integration-test-revision"
+        assert payload["metadata"]["speaker_count"] == 1
+        assert payload["metadata"]["speakers"] == ["SPEAKER_00"]
         assert [segment["speaker"] for segment in payload["segments"]] == ["SPEAKER_00"]
         assert "[SPEAKER_00] A deterministic transcript." in client.get(f"{location}?format=txt").text
         assert "[SPEAKER_00] A deterministic transcript." in client.get(f"{location}?format=srt").text
 
         assert client.delete(location).status_code == 204
         assert client.get(location).json()["error"]["code"] == "job_not_found"
+
+
+def test_alignment_falls_back_to_whisper_timestamps_and_records_reason() -> None:
+    with httpx.Client(base_url=API_URL) as client:
+        created = client.post(
+            "/v1/diarizations",
+            data={"youtube_url": "https://youtu.be/fallback-fixture"},
+        )
+        assert created.status_code == 202
+        location = created.headers["Location"]
+        run_fake_worker(env={"FAKE_SCENARIO": "forced-alignment-fallback"})
+        payload = client.get(f"{location}?format=json").json()
+
+    assert payload["metadata"]["alignment_strategy"] == "whisper_word_timestamps"
+    assert payload["metadata"]["fallback_used"] is True
+    assert payload["metadata"]["fallback_reason"] == "fake forced alignment model unavailable"

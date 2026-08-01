@@ -222,6 +222,8 @@ def job_summary(job: dict) -> dict:
     if job.get("job_type") == "diarization":
         configuration["min_speakers"] = job.get("min_speakers")
         configuration["max_speakers"] = job.get("max_speakers")
+        configuration["diarization_model"] = job.get("diarization_model")
+        configuration["diarization_model_revision"] = job.get("diarization_model_revision")
     return {
         "id": job["id"],
         "job_type": job.get("job_type", "transcription"),
@@ -271,6 +273,8 @@ def job_payload(job: dict) -> dict:
     if job.get("job_type") == "diarization":
         configuration["min_speakers"] = job.get("min_speakers")
         configuration["max_speakers"] = job.get("max_speakers")
+        configuration["diarization_model"] = job.get("diarization_model")
+        configuration["diarization_model_revision"] = job.get("diarization_model_revision")
     return {
         "id": job["id"],
         "job_type": job.get("job_type", "transcription"),
@@ -457,6 +461,14 @@ def create_app(
             raise HTTPException(422, detail={"code": "model_not_supported", "message": "Unsupported model"})
         normalized_formats = normalize_formats(formats)
         min_speakers, max_speakers = normalize_speaker_bounds(min_speakers, max_speakers)
+        if not resolved_settings.diarization_model_revision:
+            raise HTTPException(
+                503,
+                detail={
+                    "code": "diarization_model_unavailable",
+                    "message": "Diarization is not configured with a pinned model revision",
+                },
+            )
         job_id = new_job_id("diarization")
         filename: str | None = None
         source_path: str | None = None
@@ -471,6 +483,8 @@ def create_app(
                 language=normalized_language, output_script=output_script_for(normalized_language),
                 output_formats=normalized_formats, min_speakers=min_speakers,
                 max_speakers=max_speakers,
+                diarization_model=resolved_settings.diarization_model,
+                diarization_model_revision=resolved_settings.diarization_model_revision,
             ))
         except UploadTooLarge:
             job_storage.remove_job(job_id)

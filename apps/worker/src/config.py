@@ -14,6 +14,8 @@ class Settings:
     max_attempts: int
     heartbeat_interval_seconds: float = 5
     stale_timeout_seconds: float = 30
+    diarization_model: str = "pyannote/speaker-diarization-community-1"
+    diarization_model_revision: str | None = None
 
 
 def load_settings() -> Settings:
@@ -27,4 +29,8 @@ def load_settings() -> Settings:
         max_attempts=int(os.getenv("MAX_ATTEMPTS", "3")),
         heartbeat_interval_seconds=float(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "5")),
         stale_timeout_seconds=float(os.getenv("STALE_TIMEOUT_SECONDS", "30")),
+        diarization_model=os.getenv(
+            "DIARIZATION_MODEL", "pyannote/speaker-diarization-community-1"
+        ),
+        diarization_model_revision=os.getenv("DIARIZATION_MODEL_REVISION"),
     )

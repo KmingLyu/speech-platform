@@ -64,6 +64,7 @@ def test_schema_migrations_are_repeatable_on_clean_database() -> None:
         ("004_add_retry_classification.sql",),
         ("005_add_job_type.sql",),
         ("006_add_diarization_bounds.sql",),
+        ("007_add_diarization_model_revision.sql",),
     ]
 
 
@@ -96,6 +97,7 @@ def test_schema_migrations_upgrade_existing_database() -> None:
         ("004_add_retry_classification.sql",),
         ("005_add_job_type.sql",),
         ("006_add_diarization_bounds.sql",),
+        ("007_add_diarization_model_revision.sql",),
     ]
 
 
@@ -126,6 +128,10 @@ def test_schema_migrations_carry_existing_attempts_into_the_automatic_budget() -
             job_type = conn.execute(
                 "SELECT job_type FROM transcription_jobs WHERE id = 'tr_legacy'"
             ).fetchone()
+            model_snapshot = conn.execute(
+                "SELECT diarization_model, diarization_model_revision FROM transcription_jobs WHERE id = 'tr_legacy'"
+            ).fetchone()
 
     assert legacy == (2, 2, None)
     assert job_type == ("transcription",)
+    assert model_snapshot == (None, None)

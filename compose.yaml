@@ -41,6 +41,8 @@ services:
       MAX_ATTEMPTS: ${MAX_ATTEMPTS:-3}
       HEARTBEAT_INTERVAL_SECONDS: ${HEARTBEAT_INTERVAL_SECONDS:-5}
       STALE_TIMEOUT_SECONDS: ${STALE_TIMEOUT_SECONDS:-30}
+      DIARIZATION_MODEL: ${DIARIZATION_MODEL:-pyannote/speaker-diarization-community-1}
+      DIARIZATION_MODEL_REVISION: ${DIARIZATION_MODEL_REVISION:?DIARIZATION_MODEL_REVISION must be set to a pinned revision}
     volumes:
       - ./data:/data
       - ./models:/models
