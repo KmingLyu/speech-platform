@@ -114,3 +114,50 @@ def test_diarization_accepts_and_preserves_positive_display_line_capacity() -> N
         )
         assert transcription.status_code == 202
         assert "max_chars_per_line" not in client.get(transcription.headers["Location"]).json()["configuration"]
+
+
+def test_diarization_prefers_semantic_boundaries_and_preserves_overlong_terms() -> None:
+    with httpx.Client(base_url=API_URL) as client:
+        created = client.post(
+            "/v1/diarizations",
+            data={
+                "youtube_url": "https://youtu.be/semantic-display",
+                "max_chars_per_line": "12",
+            },
+        )
+        assert created.status_code == 202
+        location = created.headers["Location"]
+        run_fake_worker(env={"FAKE_SCENARIO": "semantic-display"})
+        payload = client.get(f"{location}?format=json").json()
+
+    assert [segment["text"] for segment in payload["segments"]] == ["甲乙。", "丙丁戊己", "PV-1 王小明"]
+    assert "".join(segment["text"] for segment in payload["segments"]) == "甲乙。丙丁戊己PV-1 王小明"
+    assert payload["segments"][2]["text"] == "PV-1 王小明"
+
+    with httpx.Client(base_url=API_URL) as client:
+        created = client.post(
+            "/v1/diarizations",
+            data={"youtube_url": "https://youtu.be/protected-overlong", "max_chars_per_line": "8"},
+        )
+        location = created.headers["Location"]
+        run_fake_worker(env={"FAKE_SCENARIO": "protected-overlong"})
+        protected_payload = client.get(f"{location}?format=json").json()
+
+    assert [segment["text"] for segment in protected_payload["segments"]] == ["PV-1"]
+
+
+def test_diarization_uses_proportional_display_timing_only_after_attribution() -> None:
+    with httpx.Client(base_url=API_URL) as client:
+        created = client.post(
+            "/v1/diarizations",
+            data={"youtube_url": "https://youtu.be/display-timing-fallback", "max_chars_per_line": "8"},
+        )
+        assert created.status_code == 202
+        location = created.headers["Location"]
+        run_fake_worker(env={"FAKE_SCENARIO": "display-timing-fallback"})
+        payload = client.get(f"{location}?format=json").json()
+
+    assert payload["metadata"]["display_timing_strategy"] == "proportional_estimate"
+    assert [segment["text"] for segment in payload["segments"]] == ["abc", "def", "ghi", "jkl"]
+    assert [segment["start"] for segment in payload["segments"]] == [0.0, 3.125, 6.25, 9.375]
+    assert [segment["end"] for segment in payload["segments"]] == [3.125, 6.25, 9.375, 12.5]

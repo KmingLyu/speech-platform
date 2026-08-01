@@ -42,6 +42,7 @@ DATABASE_URL=postgresql://speech_asr:<same-password>@postgres:5432/speech_asr
 | --- | ---: | --- |
 | `SUPPORTED_MODELS` | `large-v3-turbo` | API model allowlist；預設模型固定為 `large-v3-turbo` |
 | `INFERENCE_DEVICE` | `auto` | `auto` 優先 GPU 並允許 CPU fallback；`cuda` 嚴格要求 GPU；`cpu` 強制使用 CPU |
+| `ALIGNMENT_STRATEGY` | `forced_alignment` | `forced_alignment` 優先 forced alignment 並在不可用時回退至 Whisper word timestamps；`whisper_word_timestamps` 直接使用 Whisper timestamps |
 | `MAX_UPLOAD_SIZE_MB` | `2048` | streaming upload safety guard |
 | `MAX_ATTEMPTS` | `3` | retryable failure 的 bounded automatic retry budget |
 | `HEARTBEAT_INTERVAL_SECONDS` | `5` | Worker heartbeat 頻率 |

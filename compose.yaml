@@ -39,6 +39,7 @@ services:
       MODEL_ROOT: ${MODEL_ROOT:-/models}
       WHISPER_MODEL: ${WHISPER_MODEL:-large-v3-turbo}
       INFERENCE_DEVICE: ${INFERENCE_DEVICE:-auto}
+      ALIGNMENT_STRATEGY: ${ALIGNMENT_STRATEGY:-forced_alignment}
       WORKER_ID: ${WORKER_ID:-gpu-worker-01}
       POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-2}
       MAX_ATTEMPTS: ${MAX_ATTEMPTS:-3}

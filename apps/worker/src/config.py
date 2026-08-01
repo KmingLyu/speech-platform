@@ -17,9 +17,13 @@ class Settings:
     diarization_model: str = "pyannote/speaker-diarization-community-1"
     diarization_model_revision: str | None = None
     inference_device: str = "auto"
+    alignment_strategy: str = "forced_alignment"
 
 
 def load_settings() -> Settings:
+    alignment_strategy = os.getenv("ALIGNMENT_STRATEGY", "forced_alignment")
+    if alignment_strategy not in {"forced_alignment", "whisper_word_timestamps"}:
+        raise ValueError("ALIGNMENT_STRATEGY must be forced_alignment or whisper_word_timestamps")
     return Settings(
         database_url=os.environ["DATABASE_URL"],
         data_root=Path(os.getenv("DATA_ROOT", "/data")),
@@ -35,4 +39,5 @@ def load_settings() -> Settings:
         ),
         diarization_model_revision=os.getenv("DIARIZATION_MODEL_REVISION"),
         inference_device=os.getenv("INFERENCE_DEVICE", "auto"),
+        alignment_strategy=alignment_strategy,
     )

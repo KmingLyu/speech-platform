@@ -62,7 +62,11 @@ def production_dependencies(
         transcription=transcription,
         converter=ProductionTranscriptConverter(),
         artifacts=FilesystemArtifactWriter(),
-        alignment=ForcedAlignmentWithWhisperFallback(None, WhisperWordAlignment()),
+        alignment=(
+            WhisperWordAlignment()
+            if settings.alignment_strategy == "whisper_word_timestamps"
+            else ForcedAlignmentWithWhisperFallback(None, WhisperWordAlignment())
+        ),
         diarization=PyannoteCommunityDiarization(
             model=settings.diarization_model,
             revision=settings.diarization_model_revision,

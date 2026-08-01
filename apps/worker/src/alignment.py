@@ -10,6 +10,7 @@ class AlignmentResult:
     language: str | None
     fallback_used: bool = False
     fallback_reason: str | None = None
+    display_word_timestamps_available: bool = True
 
 
 class AlignmentEngine(Protocol):

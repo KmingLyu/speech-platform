@@ -123,10 +123,27 @@ class FakeTranscriptionEngine(TranscriptionEngine):
                     {"start": 3.0, "end": 4.0, "text": " world"},
                 ],
             }]
-        if scenario == "display-timing":
+        if scenario in {"display-timing", "display-timing-fallback"}:
             return "abcdefghijkl", [{
-                "id": 0, "start": 0.0, "end": 0.5, "text": "abcdefghijkl",
-                "words": [{"start": 0.0, "end": 0.5, "text": "abcdefghijkl"}],
+                "id": 0, "start": 0.0, "end": 12.5 if scenario == "display-timing-fallback" else 0.5,
+                "text": "abcdefghijkl",
+                "words": [{"start": 0.0, "end": 12.5 if scenario == "display-timing-fallback" else 0.5, "text": "abcdefghijkl"}],
+            }]
+        if scenario == "semantic-display":
+            return "甲乙。丙丁戊己PV-1 王小明", [{
+                "id": 0, "start": 0.0, "end": 6.0, "text": "甲乙。丙丁戊己PV-1 王小明",
+                "words": [
+                    {"start": 0.0, "end": 1.0, "text": "甲乙。"},
+                    {"start": 1.0, "end": 2.0, "text": "丙丁"},
+                    {"start": 2.0, "end": 3.0, "text": "戊己"},
+                    {"start": 3.0, "end": 4.0, "text": "PV-1"},
+                    {"start": 4.0, "end": 6.0, "text": " 王小明"},
+                ],
+            }]
+        if scenario == "protected-overlong":
+            return "PV-1", [{
+                "id": 0, "start": 0.0, "end": 2.0, "text": "PV-1",
+                "words": [{"start": 0.0, "end": 2.0, "text": "PV-1"}],
             }]
         return (
             "A deterministic transcript.",
@@ -159,8 +176,12 @@ class ControlledDiarizationEngine(DiarizationEngine):
                 {"start": 0.0, "end": 2.0, "speaker": "SPEAKER_00"},
                 {"start": 2.0, "end": 4.0, "speaker": "SPEAKER_01"},
             ]
-        if scenario == "display-timing":
-            return [{"start": 0.0, "end": 0.5, "speaker": "SPEAKER_00"}]
+        if scenario in {"display-timing", "display-timing-fallback"}:
+            return [{"start": 0.0, "end": 12.5 if scenario == "display-timing-fallback" else 0.5, "speaker": "SPEAKER_00"}]
+        if scenario == "semantic-display":
+            return [{"start": 0.0, "end": 6.0, "speaker": "SPEAKER_00"}]
+        if scenario == "protected-overlong":
+            return [{"start": 0.0, "end": 2.0, "speaker": "SPEAKER_00"}]
         return [{"start": 0.0, "end": 12.5, "speaker": "SPEAKER_00"}]
 
 
@@ -178,6 +199,17 @@ class FailingForcedAlignment:
     def align(self, audio_path: Path, *, text: str, segments: list[dict], language: str | None):
         del audio_path, text, segments, language
         raise RuntimeError("fake forced alignment model unavailable")
+
+
+class DisplayWordsUnavailableAlignment(WhisperWordAlignment):
+    def align(self, *args, **kwargs):
+        result = super().align(*args, **kwargs)
+        return type(result)(
+            words=result.words,
+            strategy=result.strategy,
+            language=result.language,
+            display_word_timestamps_available=False,
+        )
 
 
 class CancelSimulatingArtifactWriter(ArtifactWriter):
@@ -231,6 +263,8 @@ def main() -> None:
         alignment=(
             ForcedAlignmentWithWhisperFallback(FailingForcedAlignment(), WhisperWordAlignment())
             if os.getenv("FAKE_SCENARIO") == "forced-alignment-fallback"
+            else DisplayWordsUnavailableAlignment()
+            if os.getenv("FAKE_SCENARIO") == "display-timing-fallback"
             else WhisperWordAlignment()
         ),
         diarization=ControlledDiarizationEngine(),

@@ -230,6 +230,7 @@ def process_job(
             segments = display_segments(
                 attribution.words,
                 max_chars_per_line=job.get("max_chars_per_line", 20),
+                proportional_timing=not alignment_result.display_word_timestamps_available,
             )
             speakers = sorted({turn["speaker"] for turn in turns})
             metadata.update({
@@ -242,6 +243,11 @@ def process_job(
                 "speaker_count": len(speakers),
                 "speakers": speakers,
                 "attribution_statistics": attribution.statistics,
+                "display_timing_strategy": (
+                    "proportional_estimate"
+                    if not alignment_result.display_word_timestamps_available
+                    else "word_timestamps"
+                ),
             })
         dependencies.jobs.update(job_id, progress=90, processed_seconds=duration)
 
