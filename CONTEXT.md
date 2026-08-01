@@ -103,8 +103,12 @@ faster-whisper 產生的原始 transcription 片段，保留辨識器給出的�
 _Avoid_: Display segment（為觀看而切分的最終字幕單位）
 
 **Display segment**:
-由已完成 speaker attribution 的文字與時間資訊導出的單行字幕 cue，具有自己的 `start`、`end`、主要文字與可選 speaker；diarization 的對外 artifact 使用它，而不覆寫 ASR segment。
+由已完成 speaker attribution 的文字與時間資訊導出的單行字幕 cue，具有自己的 `start`、`end`、主要文字與可選 speaker；diarization 的對外 artifact 使用它，而不覆寫 ASR segment，並保留來源文字的時間範圍。
 _Avoid_: Line break（只是同一 cue 的排版）、ASR segment（辨識器原始輸出）
+
+**Timeline-preserving display segmentation**:
+將已 attribution 的文字分成 Display segment 時，每個 cue 僅採用既有的文字時間範圍，不因閱讀性或排版而延長、縮短或推移時間軸。
+_Avoid_: Readability timing adjustment（會改變來源時間軸）
 
 **Transcript artifact**:
 由 Transcription job 產生、可供下載的特定格式 Transcript，例如 JSON、TXT 或 SRT。

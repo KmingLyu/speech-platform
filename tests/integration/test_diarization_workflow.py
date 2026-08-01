@@ -54,11 +54,10 @@ def test_diarization_fake_pipeline_exposes_isolated_speaker_artifacts() -> None:
         assert payload["metadata"]["diarization_model_revision"] == "integration-test-revision"
         assert payload["metadata"]["speaker_count"] == 1
         assert payload["metadata"]["speakers"] == ["SPEAKER_00"]
-        assert [segment["speaker"] for segment in payload["segments"]] == ["SPEAKER_00"] * 3
+        assert [segment["speaker"] for segment in payload["segments"]] == ["SPEAKER_00"]
         assert "".join(segment["text"] for segment in payload["segments"]) == "A deterministic transcript."
-        assert all(segment["end"] - segment["start"] <= 5.0 for segment in payload["segments"])
-        assert client.get(f"{location}?format=txt").text.count("[SPEAKER_00]") == 3
-        assert client.get(f"{location}?format=srt").text.count("[SPEAKER_00]") == 3
+        assert client.get(f"{location}?format=txt").text.count("[SPEAKER_00]") == 1
+        assert client.get(f"{location}?format=srt").text.count("[SPEAKER_00]") == 1
 
         assert client.delete(location).status_code == 204
         assert client.get(location).json()["error"]["code"] == "job_not_found"
@@ -146,18 +145,18 @@ def test_diarization_prefers_semantic_boundaries_and_preserves_overlong_terms() 
     assert [segment["text"] for segment in protected_payload["segments"]] == ["PV-1"]
 
 
-def test_diarization_uses_proportional_display_timing_only_after_attribution() -> None:
+def test_diarization_splits_overlong_words_within_their_source_timing() -> None:
     with httpx.Client(base_url=API_URL) as client:
         created = client.post(
             "/v1/diarizations",
-            data={"youtube_url": "https://youtu.be/display-timing-fallback", "max_chars_per_line": "8"},
+            data={"youtube_url": "https://youtu.be/overlong-word", "max_chars_per_line": "8"},
         )
         assert created.status_code == 202
         location = created.headers["Location"]
-        run_fake_worker(env={"FAKE_SCENARIO": "display-timing-fallback"})
+        run_fake_worker(env={"FAKE_SCENARIO": "overlong-word"})
         payload = client.get(f"{location}?format=json").json()
 
-    assert payload["metadata"]["display_timing_strategy"] == "proportional_estimate"
+    assert "display_timing_strategy" not in payload["metadata"]
     assert [segment["text"] for segment in payload["segments"]] == ["abc", "def", "ghi", "jkl"]
     assert [segment["start"] for segment in payload["segments"]] == [0.0, 3.125, 6.25, 9.375]
     assert [segment["end"] for segment in payload["segments"]] == [3.125, 6.25, 9.375, 12.5]

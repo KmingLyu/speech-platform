@@ -87,7 +87,7 @@ def test_display_artifacts_split_at_capacity_and_reliable_speaker_changes() -> N
     assert srt.count("[SPEAKER_01]") == 2
 
 
-def test_display_cues_extend_short_timing_to_a_readable_duration() -> None:
+def test_display_cues_preserve_short_source_timing() -> None:
     with httpx.Client(base_url=API_URL) as client:
         created = client.post(
             "/v1/diarizations",
@@ -100,12 +100,10 @@ def test_display_cues_extend_short_timing_to_a_readable_duration() -> None:
     assert segments == [{
         "id": 0,
         "start": 0.0,
-        "end": 1.0,
+        "end": 0.5,
         "speaker": "SPEAKER_00",
         "text": "abcdefghijkl",
     }]
-    assert all(1.0 <= segment["end"] - segment["start"] <= 5.0 for segment in segments)
-    assert all(len(segment["text"]) * 0.5 / (segment["end"] - segment["start"]) <= 6.0 for segment in segments)
 
 
 def test_empty_transcription_is_a_permanent_failure() -> None:

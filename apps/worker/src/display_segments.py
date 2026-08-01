@@ -1,12 +1,8 @@
 """Derive the single-line subtitle cues exported by Diarization jobs."""
 
-from unicodedata import east_asian_width
 from math import ceil
 import re
-
-
-MAX_SPOKEN_UNITS_PER_SECOND = 6.0
-MAX_CUE_DURATION_SECONDS = 5.0
+from unicodedata import east_asian_width
 
 
 def visual_units(text: str) -> float:
@@ -19,7 +15,7 @@ def _visible_label(speaker: str | None) -> str:
 
 
 def _split_overlong_word(word: dict, max_chars_per_line: int) -> list[dict]:
-    """Make a long timestamped word fit the foundation's capacity/duration rules.
+    """Make a long timestamped word fit the line capacity without changing its span.
 
     Semantic protected spans are deliberately deferred to issue 02. Until then,
     character boundaries preserve the complete spoken text and distribute the
@@ -28,15 +24,14 @@ def _split_overlong_word(word: dict, max_chars_per_line: int) -> list[dict]:
     text = word["text"].strip()
     if _is_protected_span(text):
         return [word]
-    duration = float(word["end"]) - float(word["start"])
+    start = float(word["start"])
+    duration = float(word["end"]) - start
     available_units = max_chars_per_line - visual_units(_visible_label(word["speaker"]))
     if not text or available_units <= 0:
         return [word]
     part_count = max(
         1,
-        ceil(duration / MAX_CUE_DURATION_SECONDS),
         ceil(visual_units(text) / available_units),
-        ceil(visual_units(text) / (MAX_SPOKEN_UNITS_PER_SECOND * MAX_CUE_DURATION_SECONDS)),
     )
     if part_count == 1:
         return [word]
@@ -45,8 +40,8 @@ def _split_overlong_word(word: dict, max_chars_per_line: int) -> list[dict]:
     return [
         {
             **word,
-            "start": float(word["start"]) + duration * index / part_count,
-            "end": float(word["start"]) + duration * (index + 1) / part_count,
+            "start": start + duration * index / part_count,
+            "end": start + duration * (index + 1) / part_count,
             "text": part,
         }
         for index, part in enumerate(parts)
@@ -64,30 +59,6 @@ def _is_protected_span(text: str) -> bool:
     )
 
 
-def _with_proportional_word_timing(words: list[dict]) -> list[dict]:
-    """Estimate word timing inside already speaker-consistent timed spans."""
-    timed: list[dict] = []
-    index = 0
-    while index < len(words):
-        end_index = index + 1
-        while end_index < len(words) and words[end_index]["speaker"] == words[index]["speaker"]:
-            end_index += 1
-        span = words[index:end_index]
-        start = float(span[0]["start"])
-        end = float(span[-1]["end"])
-        total_units = sum(visual_units(word["text"].strip()) for word in span) or 1.0
-        cursor = start
-        for position, word in enumerate(span):
-            if position == len(span) - 1:
-                word_end = end
-            else:
-                word_end = cursor + (end - start) * visual_units(word["text"].strip()) / total_units
-            timed.append({**word, "start": cursor, "end": word_end})
-            cursor = word_end
-        index = end_index
-    return timed
-
-
 def _boundary_priority(words: list[dict], cut: int) -> tuple[int, float]:
     """Rank allowed cuts by linguistic boundary, then by visual balance."""
     text = words[cut - 1]["text"].rstrip()
@@ -103,23 +74,23 @@ def _boundary_priority(words: list[dict], cut: int) -> tuple[int, float]:
 
 
 def display_segments(
-    words: list[dict], *, max_chars_per_line: int, proportional_timing: bool = False,
+    words: list[dict], *, max_chars_per_line: int,
 ) -> list[dict]:
     """Split attributed words into sequential, single-line public subtitle cues.
 
     Speaker-labelled text stays in speaker-consistent cues. Reliable speaker
     changes are therefore inviolable boundaries; attribution gaps also remain
-    separate so an unknown word is never shown under a known speaker label. Within a speaker-consistent span,
-    the earliest word boundary that would violate capacity, reading speed, or the
-    normal five-second maximum begins the next cue. A single word may exceed the
-    capacity so protected names, numbers, and hyphenated terms remain intact.
+    separate so an unknown word is never shown under a known speaker label.
+    Sentence-ending punctuation creates a cue before line capacity is considered.
+    Within a sentence, line capacity prefers punctuation and pause boundaries.
+    A single protected word may exceed capacity so names, numbers, and hyphenated
+    terms remain intact.
     """
     cues: list[dict] = []
     current: list[dict] = []
-    source_words = _with_proportional_word_timing(words) if proportional_timing else words
     display_words = [
         display_word
-        for word in source_words
+        for word in words
         for display_word in _split_overlong_word(word, max_chars_per_line)
     ]
 
@@ -134,45 +105,43 @@ def display_segments(
             "text": "".join(word["text"] for word in words_to_emit).strip(),
         })
 
+    def emit_sentence(words_to_emit: list[dict]) -> None:
+        remaining = words_to_emit
+        while len(remaining) > 1:
+            text = "".join(item["text"] for item in remaining).strip()
+            label_units = visual_units(_visible_label(remaining[0]["speaker"]))
+            if label_units + visual_units(text) <= max_chars_per_line:
+                break
+            cuts_that_fit = [
+                index
+                for index in range(1, len(remaining))
+                if label_units + visual_units(
+                    "".join(word["text"] for word in remaining[:index]).strip(),
+                ) <= max_chars_per_line
+            ]
+            if not cuts_that_fit:
+                emit(remaining[:1])
+                remaining = remaining[1:]
+                continue
+            cut = max(
+                cuts_that_fit,
+                key=lambda index: _boundary_priority(remaining, index),
+            )
+            emit(remaining[:cut])
+            remaining = remaining[cut:]
+        emit(remaining)
+
     for word in display_words:
         if current and current[-1]["speaker"] != word["speaker"]:
-            emit(current)
+            emit_sentence(current)
             current = []
 
         current.append(word)
-        while len(current) > 1:
-            text = "".join(item["text"] for item in current).strip()
-            duration = float(current[-1]["end"]) - float(current[0]["start"])
-            label_units = visual_units(_visible_label(current[0]["speaker"]))
-            violates_constraints = (
-                label_units + visual_units(text) > max_chars_per_line
-                or duration > 0 and visual_units(text) / duration > MAX_SPOKEN_UNITS_PER_SECOND
-                or duration > MAX_CUE_DURATION_SECONDS
-            )
-            if not violates_constraints:
-                break
-            cut = max(range(1, len(current)), key=lambda index: _boundary_priority(current, index))
-            emit(current[:cut])
-            current = current[cut:]
+        if current and current[-1]["text"].rstrip().endswith(
+            ("。", "！", "？", ".", "!", "?"),
+        ):
+            emit_sentence(current)
+            current = []
 
-    emit(current)
-    timeline_end = 0.0
-    for index, cue in enumerate(cues):
-        cue["start"] = max(float(cue["start"]), timeline_end)
-        minimum_duration = max(1.0, visual_units(cue["text"]) / MAX_SPOKEN_UNITS_PER_SECOND)
-        maximum_end = cue["start"] + MAX_CUE_DURATION_SECONDS
-        if index + 1 < len(cues):
-            next_cue = cues[index + 1]
-            is_reliable_speaker_change = (
-                cue["speaker"] is not None
-                and next_cue["speaker"] is not None
-                and cue["speaker"] != next_cue["speaker"]
-            )
-            if is_reliable_speaker_change:
-                maximum_end = min(maximum_end, float(next_cue["start"]))
-        cue["end"] = min(maximum_end, cue["start"] + max(
-            float(cue["end"]) - float(cue["start"]),
-            minimum_duration,
-        ))
-        timeline_end = cue["end"]
+    emit_sentence(current)
     return cues

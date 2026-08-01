@@ -81,15 +81,14 @@ Each Display segment is exactly one visible line. Its speaker label and main tex
 Use these hard constraints:
 
 - `max_chars_per_line` defaults to 20 visual units. Chinese and other full-width characters count as 1; ASCII letters and digits count as 0.5; the visible speaker label counts toward this limit.
-- Main spoken text, excluding the speaker label, must not exceed 6 full-width-character units per second.
-- A cue normally remains visible for at least 1.0 second and at most 5.0 seconds. Move a proposed boundary to satisfy the minimum where possible, but never merge across a reliable speaker change. Cues exceeding the maximum must be split.
-- A reliable speaker change is the highest-priority timed-cue boundary. A `null` speaker is not a reliable speaker change.
+- A cue retains the start and end of its attributed words. Display segmentation never extends, shortens, or shifts cue timing for readability, capacity, or continuity.
+- A speaker change, including a transition to or from a `null` speaker, is a mandatory cue boundary.
 
-Subject to those hard constraints, choose the boundary nearest the ideal balanced split, in this priority order: sentence-ending punctuation (`。！？` and equivalents); secondary punctuation (`，、：；` and equivalents); a natural pause between words; a Chinese semantic-clause boundary; then any adjacent word boundary that does not damage a protected span. Prefer a boundary that leaves the preceding and following cues similar in length.
+Sentence-ending punctuation (`。！？` and equivalents) creates a cue even below line capacity. When that cue still exceeds capacity, choose a boundary in this priority order: secondary punctuation (`，、：；` and equivalents); a natural pause between words; a Chinese semantic-clause boundary; then any adjacent word boundary that does not damage a protected span.
 
 Never split a protected span—person name, proper noun, number and unit, English name, or hyphenated term such as `PV-1`. If one protected span alone exceeds the maximum line length, emit it intact as the sole exception rather than splitting the span or using CSS to hide the overflow.
 
-If display segmentation has no usable word timestamps but receives an already speaker-consistent segment with `start` and `end`, it may estimate child cue times in proportion to the main text's visual-unit length and set `metadata.display_timing_strategy` to `proportional_estimate`. This fallback must never be used to infer or alter speaker attribution. If attribution itself has no reliable word data, the diarization job fails as today.
+Display segmentation requires usable attributed word timestamps. If attribution has no reliable word data, the diarization job fails as today.
 
 ## Output contract
 
@@ -118,7 +117,7 @@ The JSON artifact keeps the existing root envelope and adds:
 }
 ```
 
-The public schema is Display-segment-level only. Internal ASR segments and word timestamps are used for attribution and display timing but are not exported. JSON `segments[].text` is main spoken text and `segments[].speaker` is the separate speaker value; JSON top-level `text` remains plain text. TXT, SRT, and future VTT render each final cue on one line as `[SPEAKER_00] main spoken text`; a null speaker renders as `[UNKNOWN]`. The visible label counts toward `max_chars_per_line` but not toward spoken-text reading speed.
+The public schema is Display-segment-level only. Internal ASR segments and word timestamps are used for attribution and display timing but are not exported. JSON `segments[].text` is main spoken text and `segments[].speaker` is the separate speaker value; JSON top-level `text` remains plain text. TXT, SRT, and future VTT render each final cue on one line as `[SPEAKER_00] main spoken text`; a null speaker renders as `[UNKNOWN]`. The visible label counts toward `max_chars_per_line`.
 
 ## Failure behavior
 
@@ -126,7 +125,7 @@ The public schema is Display-segment-level only. Internal ASR segments and word 
 - `no_speakers_detected`: permanent failure.
 - Partial attribution gaps: complete with `speaker: null` and attribution statistics.
 - Alignment failure with usable Whisper timestamps: complete with fallback metadata.
-- Display timing without usable word timestamps but with an already attributed segment: complete with `display_timing_strategy: proportional_estimate`.
+- Missing attributed word timestamps: permanent alignment failure.
 - Missing model/deployment failures: retryable and never silently switch model revision.
 
 ## Implementation slices
@@ -138,7 +137,7 @@ The public schema is Display-segment-level only. Internal ASR segments and word 
 5. Add alignment, pyannote exclusive diarization, attribution, and exporters.
 6. Add fake-adapter contract tests and separate real-model smoke tests.
 7. Add authorized audio fixtures for speaker alternation, boundary crossings, fallback, null attribution, and no-speaker failures.
-8. Add Display-segment contract tests for one-line output, line-length and reading-speed limits, punctuation and pause priorities, protected spans, speaker-change cuts, and proportional timing fallback.
+8. Add Display-segment contract tests for one-line output, line-length limits, sentence and pause priorities, protected spans, speaker-change cuts, and timestamp preservation.
 
 ## Deferred work
 
