@@ -9,6 +9,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     python3 \
+    libpython3.10 \
     python3-pip \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*

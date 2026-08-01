@@ -93,7 +93,7 @@ Before accepting diarization jobs, download and validate the configured pinned
 revision. Keep the previous revision directory beside the new one for rollback:
 
 ```bash
-docker compose run --rm worker python3 scripts/prepare-diarization-model.py
+docker compose run --rm -e PYTHONPATH=/app worker python3 scripts/prepare-diarization-model.py
 docker compose restart worker
 ```
 
@@ -102,6 +102,7 @@ separate from CI's deterministic fake-worker suite:
 
 ```bash
 docker compose run --rm \
+  -e PYTHONPATH=/app \
   -e AUTHORIZED_AUDIO_FIXTURE=/data/fixtures/short-authorized.wav \
   worker python3 scripts/smoke-diarization-model.py
 ```

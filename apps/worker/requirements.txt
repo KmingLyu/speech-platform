@@ -1,5 +1,8 @@
 faster-whisper==1.1.1
 pyannote.audio==4.0.7
+# pyannote.audio 4 uses TorchCodec for decoding. Keep it compatible with the
+# pre-release PyTorch installed by this GPU image.
+torchcodec==0.13.0
 opencc==1.4.0
 psycopg[binary]==3.2.6
 requests==2.32.3
