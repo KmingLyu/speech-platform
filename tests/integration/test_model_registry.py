@@ -81,3 +81,42 @@ def test_download_resumes_partial_model_directory(
         "local_dir": str(model_path),
         "token": None,
     }]
+
+
+def test_diarizer_moves_loaded_pipeline_to_cuda(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, model_registry_modules,
+) -> None:
+    settings_type, _ = model_registry_modules
+    settings = settings_for(settings_type, tmp_path)
+    model_path = tmp_path / "diarization" / "pinned-revision"
+    model_path.mkdir(parents=True)
+
+    class Pipeline:
+        loaded_from: str | None = None
+        moved_to: str | None = None
+
+        @classmethod
+        def from_pretrained(cls, path: str):
+            cls.loaded_from = path
+            return cls()
+
+        def to(self, device: str):
+            type(self).moved_to = device
+            return self
+
+    monkeypatch.setitem(sys.modules, "pyannote", types.ModuleType("pyannote"))
+    monkeypatch.setitem(sys.modules, "pyannote.audio", types.SimpleNamespace(Pipeline=Pipeline))
+    monkeypatch.setitem(sys.modules, "torch", types.SimpleNamespace(device=lambda value: value))
+
+    diarizer = importlib.import_module("src.diarizer").PyannoteCommunityDiarization(
+        revision=settings.diarization_model_revision,
+        model_root=settings.model_root,
+        device=importlib.import_module("src.device").BackendDevice(
+            backend="pyannote", device="cuda"
+        ),
+    )
+
+    diarizer._load()
+
+    assert Pipeline.loaded_from == str(model_path)
+    assert Pipeline.moved_to == "cuda"

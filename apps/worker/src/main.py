@@ -6,6 +6,7 @@ from .dependencies import production_dependencies
 from .processor import process_job
 from .repository import claim_next_job
 from .model_registry import validate_pinned_model
+from .device import log_inference_devices, resolve_inference_devices
 
 
 def main() -> None:
@@ -14,7 +15,9 @@ def main() -> None:
     settings.data_root.mkdir(parents=True, exist_ok=True)
     settings.model_root.mkdir(parents=True, exist_ok=True)
     validate_pinned_model(settings)
-    dependencies = production_dependencies(settings)
+    devices = resolve_inference_devices(settings.inference_device)
+    log_inference_devices(devices)
+    dependencies = production_dependencies(settings, devices)
     logging.info("worker %s started", settings.worker_id)
     while True:
         job = claim_next_job(settings)

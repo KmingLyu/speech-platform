@@ -16,6 +16,7 @@ class Settings:
     stale_timeout_seconds: float = 30
     diarization_model: str = "pyannote/speaker-diarization-community-1"
     diarization_model_revision: str | None = None
+    inference_device: str = "auto"
 
 
 def load_settings() -> Settings:
@@ -33,4 +34,5 @@ def load_settings() -> Settings:
             "DIARIZATION_MODEL", "pyannote/speaker-diarization-community-1"
         ),
         diarization_model_revision=os.getenv("DIARIZATION_MODEL_REVISION"),
+        inference_device=os.getenv("INFERENCE_DEVICE", "auto"),
     )

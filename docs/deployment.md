@@ -2,7 +2,7 @@
 
 ## 1. Server 前置條件
 
-目標 Server 需要 Linux、NVIDIA GPU、相容的 NVIDIA Driver、Docker Engine、Docker Compose Plugin，以及 NVIDIA Container Toolkit。
+正式環境建議使用 Linux、NVIDIA GPU、相容的 NVIDIA Driver、Docker Engine、Docker Compose Plugin，以及 NVIDIA Container Toolkit。Worker 容器能啟動、但任一模型 backend 無法使用 GPU 時，預設的 `INFERENCE_DEVICE=auto` 會降級為 CPU 並在 Worker log 記錄原因，但處理速度會明顯降低。
 
 先驗證 Docker 可以看見 GPU：
 
@@ -10,7 +10,7 @@
 docker run --rm --gpus all nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 nvidia-smi
 ```
 
-這個步驟失敗時，不要先啟動本專案；請先修正 NVIDIA Driver 或 NVIDIA Container Toolkit 安裝。
+若預期使用 GPU，這個步驟失敗時應先修正 NVIDIA Driver 或 NVIDIA Container Toolkit 安裝。要刻意使用 CPU 時，請設定 `INFERENCE_DEVICE=cpu`。
 
 > CUDA image 版本必須與 host NVIDIA Driver 相容。部署前請在實際 GPU Server 上做一次短音檔測試後，再固定 image 與 Python 套件版本。
 
@@ -41,6 +41,7 @@ DATABASE_URL=postgresql://speech_asr:<same-password>@postgres:5432/speech_asr
 | 設定 | 預設 | 用途 |
 | --- | ---: | --- |
 | `SUPPORTED_MODELS` | `large-v3-turbo` | API model allowlist；預設模型固定為 `large-v3-turbo` |
+| `INFERENCE_DEVICE` | `auto` | `auto` 優先 GPU 並允許 CPU fallback；`cuda` 嚴格要求 GPU；`cpu` 強制使用 CPU |
 | `MAX_UPLOAD_SIZE_MB` | `2048` | streaming upload safety guard |
 | `MAX_ATTEMPTS` | `3` | retryable failure 的 bounded automatic retry budget |
 | `HEARTBEAT_INTERVAL_SECONDS` | `5` | Worker heartbeat 頻率 |
@@ -77,6 +78,12 @@ docker compose ps
 docker compose logs -f api-server
 docker compose logs -f worker
 curl http://localhost:8080/healthz
+```
+
+Worker 啟動時會分別記錄 faster-whisper 與 pyannote 的實際 device。任何 CPU 選擇都會產生包含 backend 與原因的 warning；例如：
+
+```text
+WARNING inference backend is not using GPU backend=pyannote requested=auto device=cpu compute_type=default reason=torch.cuda.is_available() is false
 ```
 
 Smoke check（不需要 GPU 或外部網路）請執行：
