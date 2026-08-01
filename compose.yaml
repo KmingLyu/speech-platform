@@ -11,6 +11,8 @@ services:
       DATA_ROOT: ${DATA_ROOT:-/data}
       MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-2048}
       SUPPORTED_MODELS: ${SUPPORTED_MODELS:-large-v3-turbo}
+      DIARIZATION_MODEL: ${DIARIZATION_MODEL:-pyannote/speaker-diarization-community-1}
+      DIARIZATION_MODEL_REVISION: ${DIARIZATION_MODEL_REVISION:?DIARIZATION_MODEL_REVISION must be set to a pinned revision}
     volumes:
       - ./data:/data
     depends_on:
