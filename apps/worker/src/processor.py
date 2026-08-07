@@ -5,7 +5,16 @@ from pathlib import Path
 from typing import Protocol
 
 from .config import Settings
-from .failures import classify_failure
+from .failures import alignment_failed, classify_failure, empty_transcript, no_speakers_detected
+from .alignment import (
+    AlignmentEngine,
+    AlignmentResult,
+    AlignmentUnavailable,
+    associate_words_with_asr_segments,
+)
+from .attribution import attribute_words
+from .diarizer import DiarizationEngine
+from .display_segments import display_segments
 
 
 logger = logging.getLogger(__name__)
@@ -80,6 +89,8 @@ class ArtifactWriter(Protocol):
         output_script: str,
         segments: list[dict],
         formats: tuple[str, ...],
+        job_type: str = "transcription",
+        metadata: dict | None = None,
     ) -> dict[str, Path]: ...
 
     def discard(self, output_dir: Path) -> None: ...
@@ -93,6 +104,8 @@ class WorkerDependencies:
     transcription: TranscriptionEngine
     converter: TranscriptConverter
     artifacts: ArtifactWriter
+    alignment: AlignmentEngine | None = None
+    diarization: DiarizationEngine | None = None
 
 
 def _stop_if_canceled(
@@ -185,11 +198,64 @@ def process_job(
             segments,
             output_script,
         )
-        dependencies.jobs.update(
-            job_id,
-            progress=90,
-            processed_seconds=duration,
-        )
+        metadata: dict = {}
+        if job.get("job_type", "transcription") == "diarization":
+            if not text.strip():
+                raise empty_transcript()
+            alignment = dependencies.alignment
+            diarizer = dependencies.diarization
+            if alignment is None or diarizer is None:
+                raise RuntimeError("Diarization adapters are unavailable")
+            dependencies.jobs.update(job_id, progress=35, current_stage="aligning")
+            try:
+                alignment_result = alignment.align(
+                    audio_path, text=text, segments=segments, language=job.get("language"),
+                )
+            except AlignmentUnavailable as error:
+                raise alignment_failed(str(error)) from error
+            if isinstance(alignment_result, list):
+                alignment_result = AlignmentResult(
+                    words=alignment_result,
+                    strategy="whisper_word_timestamps",
+                    language=job.get("language"),
+                )
+            if not alignment_result.words:
+                raise alignment_failed("No word timestamps were produced")
+            alignment_result = AlignmentResult(
+                words=associate_words_with_asr_segments(alignment_result.words, segments),
+                strategy=alignment_result.strategy,
+                language=alignment_result.language,
+                fallback_used=alignment_result.fallback_used,
+                fallback_reason=alignment_result.fallback_reason,
+            )
+            dependencies.jobs.update(job_id, progress=55, current_stage="diarizing")
+            turns = diarizer.diarize(
+                audio_path,
+                min_speakers=job.get("min_speakers"),
+                max_speakers=job.get("max_speakers"),
+            )
+            if not turns:
+                raise no_speakers_detected()
+            dependencies.jobs.update(job_id, progress=75, current_stage="attributing_speakers")
+            attribution = attribute_words(alignment_result.words, turns)
+            dependencies.jobs.update(job_id, progress=85, current_stage="segmenting_for_display")
+            segments = display_segments(
+                attribution.words,
+                max_chars_per_line=job.get("max_chars_per_line", 20),
+            )
+            speakers = sorted({turn["speaker"] for turn in turns})
+            metadata.update({
+                "alignment_strategy": alignment_result.strategy,
+                "alignment_language": alignment_result.language,
+                "fallback_used": alignment_result.fallback_used,
+                "fallback_reason": alignment_result.fallback_reason,
+                "diarization_model": job.get("diarization_model"),
+                "diarization_model_revision": job.get("diarization_model_revision"),
+                "speaker_count": len(speakers),
+                "speakers": speakers,
+                "attribution_statistics": attribution.statistics,
+            })
+        dependencies.jobs.update(job_id, progress=90, processed_seconds=duration)
 
         if _stop_if_canceled(dependencies, job_id, job_root, audio_path):
             return
@@ -199,10 +265,16 @@ def process_job(
             progress=95,
             current_stage="exporting",
         )
+        public_segments = [
+            {key: value for key, value in segment.items() if key != "words"}
+            for segment in segments
+        ]
         artifacts = dependencies.artifacts.write(
             job_id, output_dir=job_root / "result", text=text, language=job["language"],
             duration=duration, model=job["model"], output_script=output_script,
-            segments=segments, formats=tuple(job.get("output_formats", ("json", "txt", "srt"))),
+            segments=public_segments, formats=tuple(job.get("output_formats", ("json", "txt", "srt"))),
+            job_type=job.get("job_type", "transcription"),
+            metadata=metadata,
         )
 
         if _stop_if_canceled(dependencies, job_id, job_root, audio_path):

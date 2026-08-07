@@ -11,6 +11,8 @@ services:
       DATA_ROOT: ${DATA_ROOT:-/data}
       MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-2048}
       SUPPORTED_MODELS: ${SUPPORTED_MODELS:-large-v3-turbo}
+      DIARIZATION_MODEL: ${DIARIZATION_MODEL:-pyannote/speaker-diarization-community-1}
+      DIARIZATION_MODEL_REVISION: ${DIARIZATION_MODEL_REVISION:?DIARIZATION_MODEL_REVISION must be set to a pinned revision}
     volumes:
       - ./data:/data
     depends_on:
@@ -36,11 +38,15 @@ services:
       DATA_ROOT: ${DATA_ROOT:-/data}
       MODEL_ROOT: ${MODEL_ROOT:-/models}
       WHISPER_MODEL: ${WHISPER_MODEL:-large-v3-turbo}
+      INFERENCE_DEVICE: ${INFERENCE_DEVICE:-auto}
+      ALIGNMENT_STRATEGY: ${ALIGNMENT_STRATEGY:-forced_alignment}
       WORKER_ID: ${WORKER_ID:-gpu-worker-01}
       POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-2}
       MAX_ATTEMPTS: ${MAX_ATTEMPTS:-3}
       HEARTBEAT_INTERVAL_SECONDS: ${HEARTBEAT_INTERVAL_SECONDS:-5}
       STALE_TIMEOUT_SECONDS: ${STALE_TIMEOUT_SECONDS:-30}
+      DIARIZATION_MODEL: ${DIARIZATION_MODEL:-pyannote/speaker-diarization-community-1}
+      DIARIZATION_MODEL_REVISION: ${DIARIZATION_MODEL_REVISION:?DIARIZATION_MODEL_REVISION must be set to a pinned revision}
     volumes:
       - ./data:/data
       - ./models:/models

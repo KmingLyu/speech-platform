@@ -20,6 +20,8 @@ from src.processor import (
     process_job,
 )
 from src.repository import claim_next_job
+from src.alignment import ForcedAlignmentWithWhisperFallback, WhisperWordAlignment
+from src.diarizer import DiarizationEngine
 
 
 def _trigger_cancellation(settings: Settings, job_id: str, stage: str, cancel_at: str | None) -> None:
@@ -90,17 +92,97 @@ class FakeTranscriptionEngine(TranscriptionEngine):
         language: str | None,
     ) -> tuple[str, list[dict]]:
         _trigger_cancellation(self.settings, self.job_id, "transcription", self.cancel_at)
+        scenario = os.getenv("FAKE_SCENARIO", "default")
+        if scenario == "empty-transcript":
+            return "", []
+        if scenario == "alternating":
+            return "Hello world again", [{
+                "id": 0, "start": 0.0, "end": 3.0, "text": "Hello world again",
+                "words": [
+                    {"start": 0.0, "end": 1.0, "text": "Hello"},
+                    {"start": 1.0, "end": 2.0, "text": " world"},
+                    {"start": 2.0, "end": 3.0, "text": " again"},
+                ],
+            }]
+        if scenario == "partial-attribution":
+            return "Hello mystery goodbye", [{
+                "id": 0, "start": 0.0, "end": 3.0, "text": "Hello mystery goodbye",
+                "words": [
+                    {"start": 0.0, "end": 1.0, "text": "Hello"},
+                    {"start": 1.5, "end": 2.0, "text": " mystery"},
+                    {"start": 2.0, "end": 3.0, "text": " goodbye"},
+                ],
+            }]
+        if scenario == "display-segments":
+            return "Hello there again world", [{
+                "id": 0, "start": 0.0, "end": 4.0, "text": "Hello there again world",
+                "words": [
+                    {"start": 0.0, "end": 1.0, "text": "Hello"},
+                    {"start": 1.0, "end": 2.0, "text": " there"},
+                    {"start": 2.0, "end": 3.0, "text": " again"},
+                    {"start": 3.0, "end": 4.0, "text": " world"},
+                ],
+            }]
+        if scenario in {"display-timing", "overlong-word"}:
+            return "abcdefghijkl", [{
+                "id": 0, "start": 0.0, "end": 12.5 if scenario == "overlong-word" else 0.5,
+                "text": "abcdefghijkl",
+                "words": [{"start": 0.0, "end": 12.5 if scenario == "overlong-word" else 0.5, "text": "abcdefghijkl"}],
+            }]
+        if scenario == "semantic-display":
+            return "甲乙。丙丁戊己PV-1 王小明", [{
+                "id": 0, "start": 0.0, "end": 6.0, "text": "甲乙。丙丁戊己PV-1 王小明",
+                "words": [
+                    {"start": 0.0, "end": 1.0, "text": "甲乙。"},
+                    {"start": 1.0, "end": 2.0, "text": "丙丁"},
+                    {"start": 2.0, "end": 3.0, "text": "戊己"},
+                    {"start": 3.0, "end": 4.0, "text": "PV-1"},
+                    {"start": 4.0, "end": 6.0, "text": " 王小明"},
+                ],
+            }]
+        if scenario == "protected-overlong":
+            return "PV-1", [{
+                "id": 0, "start": 0.0, "end": 2.0, "text": "PV-1",
+                "words": [{"start": 0.0, "end": 2.0, "text": "PV-1"}],
+            }]
         return (
             "A deterministic transcript.",
-            [
-                {
-                    "id": 0,
-                    "start": 0.0,
-                    "end": 12.5,
-                    "text": "A deterministic transcript.",
-                }
-            ],
+            [{
+                "id": 0, "start": 0.0, "end": 12.5,
+                "text": "A deterministic transcript.",
+                "words": [{"start": 0.0, "end": 12.5, "text": "A deterministic transcript."}],
+            }],
         )
+
+
+class ControlledDiarizationEngine(DiarizationEngine):
+    def diarize(self, audio_path: Path, *, min_speakers: int | None, max_speakers: int | None) -> list[dict]:
+        del audio_path, min_speakers, max_speakers
+        scenario = os.getenv("FAKE_SCENARIO", "default")
+        if scenario == "no-speakers":
+            return []
+        if scenario == "alternating":
+            return [
+                {"start": 0.0, "end": 1.2, "speaker": "SPEAKER_00"},
+                {"start": 1.2, "end": 3.0, "speaker": "SPEAKER_01"},
+            ]
+        if scenario == "partial-attribution":
+            return [
+                {"start": 0.0, "end": 1.1, "speaker": "SPEAKER_00"},
+                {"start": 2.2, "end": 3.0, "speaker": "SPEAKER_01"},
+            ]
+        if scenario == "display-segments":
+            return [
+                {"start": 0.0, "end": 2.0, "speaker": "SPEAKER_00"},
+                {"start": 2.0, "end": 4.0, "speaker": "SPEAKER_01"},
+            ]
+        if scenario in {"display-timing", "overlong-word"}:
+            return [{"start": 0.0, "end": 12.5 if scenario == "overlong-word" else 0.5, "speaker": "SPEAKER_00"}]
+        if scenario == "semantic-display":
+            return [{"start": 0.0, "end": 6.0, "speaker": "SPEAKER_00"}]
+        if scenario == "protected-overlong":
+            return [{"start": 0.0, "end": 2.0, "speaker": "SPEAKER_00"}]
+        return [{"start": 0.0, "end": 12.5, "speaker": "SPEAKER_00"}]
 
 
 class IdentityTranscriptConverter(TranscriptConverter):
@@ -111,6 +193,12 @@ class IdentityTranscriptConverter(TranscriptConverter):
         output_script: str,
     ) -> tuple[str, list[dict]]:
         return text, segments
+
+
+class FailingForcedAlignment:
+    def align(self, audio_path: Path, *, text: str, segments: list[dict], language: str | None):
+        del audio_path, text, segments, language
+        raise RuntimeError("fake forced alignment model unavailable")
 
 
 class CancelSimulatingArtifactWriter(ArtifactWriter):
@@ -161,6 +249,12 @@ def main() -> None:
         artifacts=CancelSimulatingArtifactWriter(
             FilesystemArtifactWriter(), settings=settings, job_id=job_id, cancel_at=cancel_at,
         ),
+        alignment=(
+            ForcedAlignmentWithWhisperFallback(FailingForcedAlignment(), WhisperWordAlignment())
+            if os.getenv("FAKE_SCENARIO") == "forced-alignment-fallback"
+        else WhisperWordAlignment()
+        ),
+        diarization=ControlledDiarizationEngine(),
     )
     process_job(settings, dependencies, job)
 

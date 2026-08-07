@@ -18,6 +18,12 @@ class NewTranscriptionJob:
     output_script: str
     output_formats: tuple[str, ...] = ("json", "txt", "srt")
     status: str = "queued"
+    job_type: str = "transcription"
+    min_speakers: int | None = None
+    max_speakers: int | None = None
+    diarization_model: str | None = None
+    diarization_model_revision: str | None = None
+    max_chars_per_line: int | None = None
 
     def as_record(self) -> dict:
         return asdict(self)
@@ -41,6 +47,7 @@ class JobRepository(Protocol):
     def list(
         self,
         *,
+        job_type: str = "transcription",
         status: str | None,
         before: tuple[datetime, str] | None,
         limit: int,

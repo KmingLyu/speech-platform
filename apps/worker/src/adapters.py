@@ -50,6 +50,8 @@ class FilesystemArtifactWriter(ArtifactWriter):
         output_script: str,
         segments: list[dict],
         formats: tuple[str, ...],
+        job_type: str = "transcription",
+        metadata: dict | None = None,
     ) -> dict[str, Path]:
         return export_result(
             job_id,
@@ -61,6 +63,8 @@ class FilesystemArtifactWriter(ArtifactWriter):
             output_script=output_script,
             segments=segments,
             formats=formats,
+            job_type=job_type,
+            metadata=metadata,
         )
 
     def discard(self, output_dir: Path) -> None:

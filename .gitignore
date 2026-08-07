@@ -9,3 +9,4 @@ data/jobs/*
 !data/jobs/.gitkeep
 models/*
 !models/.gitkeep
+my_notes/*

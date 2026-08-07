@@ -21,7 +21,7 @@ FastAPI 服務，唯一對外公開的服務。它負責：
 
 ### Worker
 
-Python Worker 是唯一需要 NVIDIA GPU 的服務。它依序執行：
+Python Worker 是唯一執行模型推論、並優先使用 NVIDIA GPU 的服務。預設會在 GPU 不可用時降級為 CPU 並留下 warning。它依序執行：
 
 ```text
 queued
@@ -37,8 +37,11 @@ queued
 - YouTube：使用 yt-dlp 下載最佳音訊。
 - `ffprobe`：取得媒體長度。
 - FFmpeg：轉為 16 kHz、mono FLAC。
-- faster-whisper：以 CUDA/float16 執行辨識。
+- faster-whisper：GPU 使用 CUDA/float16；CPU fallback 使用 int8。
+- pyannote Community-1：diarization 優先移到 CUDA，無法使用時留在 CPU。
 - Exporter：寫入結構化 JSON、TXT、SRT。
+
+`INFERENCE_DEVICE=auto` 會分別探測 CTranslate2 與 PyTorch 的 CUDA 能力，因為兩個 runtime 可能得到不同結果。`cuda` 模式要求兩者都能使用 CUDA，並在不符合時 fail fast；`cpu` 模式則明確讓兩者使用 CPU。
 
 第一版一次只處理一筆工作。要提高並行數時，應先確認 GPU 記憶體足夠；可啟動更多 Worker，但每個 Worker 都會載入一份模型。
 

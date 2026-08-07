@@ -14,6 +14,9 @@ from .processor import (
 from .script_converter import OutputScript, convert_segments, convert_text
 from .source import acquire_source
 from .transcriber import Transcriber
+from .diarizer import PyannoteCommunityDiarization
+from .device import InferenceDevices
+from .alignment import ForcedAlignmentWithWhisperFallback, WhisperWordAlignment
 
 
 class ProductionSourceAcquirer(SourceAcquirer):
@@ -43,8 +46,15 @@ class ProductionTranscriptConverter(TranscriptConverter):
         )
 
 
-def production_dependencies(settings: Settings) -> WorkerDependencies:
-    transcription: TranscriptionEngine = Transcriber(settings)
+def production_dependencies(
+    settings: Settings,
+    devices: InferenceDevices,
+) -> WorkerDependencies:
+    transcription: TranscriptionEngine = Transcriber(
+        settings,
+        devices.transcription,
+        allow_runtime_fallback=devices.allow_runtime_fallback,
+    )
     return WorkerDependencies(
         jobs=PostgresJobLifecycle(settings),
         sources=ProductionSourceAcquirer(),
@@ -52,4 +62,16 @@ def production_dependencies(settings: Settings) -> WorkerDependencies:
         transcription=transcription,
         converter=ProductionTranscriptConverter(),
         artifacts=FilesystemArtifactWriter(),
+        alignment=(
+            WhisperWordAlignment()
+            if settings.alignment_strategy == "whisper_word_timestamps"
+            else ForcedAlignmentWithWhisperFallback(None, WhisperWordAlignment())
+        ),
+        diarization=PyannoteCommunityDiarization(
+            model=settings.diarization_model,
+            revision=settings.diarization_model_revision,
+            model_root=settings.model_root,
+            device=devices.diarization,
+            allow_runtime_fallback=devices.allow_runtime_fallback,
+        ),
     )

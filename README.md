@@ -54,6 +54,8 @@ docker compose logs -f worker
 
 首次執行時 Worker 會下載指定的 Whisper 模型到 `./models`；之後重啟會重用快取。
 
+`INFERENCE_DEVICE=auto`（預設）會讓 faster-whisper 與 pyannote 分別優先使用 GPU；不可用的 backend 會降級為 CPU，並在 Worker log 記錄原因。可用 `cuda` 嚴格要求 GPU，或用 `cpu` 明確強制 CPU。
+
 確認 GPU 容器可用：
 
 ```bash

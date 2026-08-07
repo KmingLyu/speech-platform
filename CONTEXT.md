@@ -98,6 +98,22 @@ _Avoid_: Translation（文字系統轉換不改變語意，也不是翻譯）
 Transcription 中一段連續語音及其文字，至少包含 `start`、`end` 與 `text`；目前時間軸粒度只到 segment，不包含逐詞時間。
 _Avoid_: Word timestamp（尚未納入目前範圍）
 
+**ASR segment**:
+faster-whisper 產生的原始 transcription 片段，保留辨識器給出的文字與時間，並可在內部帶有 word timestamps；它不是 diarization 對外下載 artifact 的字幕單位。
+_Avoid_: Display segment（為觀看而切分的最終字幕單位）
+
+**Display segment**:
+由已完成 speaker attribution 的文字與時間資訊導出的單行字幕 cue，具有自己的 `start`、`end`、主要文字與可選 speaker；diarization 的對外 artifact 使用它，而不覆寫 ASR segment，並保留來源文字的時間範圍。
+_Avoid_: Line break（只是同一 cue 的排版）、ASR segment（辨識器原始輸出）
+
+**ASR-segment-first display segmentation**:
+以一個 ASR segment 作為 Display segment 的優先保留範圍，且 Display segment 不得跨越 ASR segment 邊界合併；未重切時保留 ASR segment 的完整時間範圍。只有 speaker 邊界、單行容量或其他不可違反的 display 規則要求時，才在其內重切；重切後的 cue 使用其首尾 word 的時間範圍。speaker 邊界必須切開，讓每個 Display segment 僅包含一位 speaker。單行容量原則上也必須符合，但保護詞可單獨超長以保留語意。句末標點在重切時用於選擇較自然的切點，但本身不強制建立新的 Display segment。
+_Avoid_: Sentence-first display segmentation（會在沒有必要時打散 ASR segment）
+
+**Timeline-preserving display segmentation**:
+將已 attribution 的文字分成 Display segment 時，每個 cue 僅採用既有的文字時間範圍，不因閱讀性或排版而延長、縮短或推移時間軸。
+_Avoid_: Readability timing adjustment（會改變來源時間軸）
+
 **Transcript artifact**:
 由 Transcription job 產生、可供下載的特定格式 Transcript，例如 JSON、TXT 或 SRT。
 _Avoid_: Result（可作一般描述，但正式領域詞使用 artifact 以強調格式化產物）
@@ -109,3 +125,23 @@ _Avoid_: Transcription type（格式不是不同的辨識類型）
 **Derived task**:
 以既有 Transcript 或其時間資訊為輸入的後續處理，例如 speaker diarization、translation 或 summary。目前不屬於產品範圍，未決定其是否能獨立重跑。
 _Avoid_: Feature（無法表達它和 Transcription 的依賴關係）
+
+**Diarization**:
+將一個 Source 的語音切分為 speaker turns，為每段語音賦予同一個處理範圍內有效的匿名 speaker label；本專案的 diarization API 會先完成 Transcription，再執行 diarization 與 alignment。
+_Avoid_: Speaker identification（本專案不辨識真實人物身份）
+
+**Speaker turn**:
+由同一位 speaker 連續說話所形成的語音時間區間；它是 diarization 的時間結果，不等同於 Whisper 的 Segment。
+_Avoid_: Speaker segment（容易與 Transcription 的 Segment 混淆）
+
+**Alignment**:
+將 Transcript 的文字單位與音訊時間軸及 speaker turns 對齊的處理；內部可使用 word-level 時間資訊，但對外結果目前只公開重新合併後的 Segment。
+_Avoid_: Synchronization（過於籠統，無法表達文字與 speaker 時間的對應）
+
+**Diarized transcript**:
+由 Diarization 產生的 Transcript，由 Display segment 組成，除文字與時間外還包含匿名 speaker label；每個 word 最終都會歸屬於某個處理範圍內的 speaker，speaker label 只在單一 job 內有效。
+_Avoid_: Identified transcript（不代表真實身份）
+
+**Inferred speaker attribution**:
+當 word 無法由 speaker turn 直接可靠地歸屬時，根據時間距離與前後 attribution 規則補上的匿名 speaker label；它仍然只在單一 Diarization job 內有效，且不代表真實人物身份。
+_Avoid_: Speaker identification（本專案不辨識真實人物身份）、Unknown speaker（對外結果不保留 UNKNOWN）

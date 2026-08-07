@@ -81,6 +81,30 @@ def source_download_failed(detail: str) -> RetryableFailure:
     )
 
 
+def empty_transcript() -> PermanentFailure:
+    return PermanentFailure("empty_transcript", "The transcription produced no text.")
+
+
+def no_speakers_detected() -> PermanentFailure:
+    return PermanentFailure("no_speakers_detected", "No speakers were detected in the audio.")
+
+
+def alignment_failed(detail: str) -> PermanentFailure:
+    return PermanentFailure(
+        "alignment_failed",
+        "The transcript could not be aligned to word timestamps.",
+        detail=detail,
+    )
+
+
+def diarization_model_unavailable(detail: str) -> RetryableFailure:
+    return RetryableFailure(
+        "diarization_model_unavailable",
+        "The diarization model is unavailable.",
+        detail=detail,
+    )
+
+
 def download_failure(reason: str) -> ClassifiedFailure:
     """Classify a Source download error by whether any Attempt could acquire it.
 

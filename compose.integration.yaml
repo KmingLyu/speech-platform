@@ -7,6 +7,7 @@ services:
       DATABASE_URL: postgresql://speech_test:speech_test@postgres:5432/speech_test
       DATA_ROOT: /test-data
       MAX_UPLOAD_SIZE_MB: 16
+      DIARIZATION_MODEL_REVISION: integration-test-revision
     volumes:
       - integration-data:/test-data
     depends_on:

@@ -32,8 +32,28 @@ DEFAULT_LIST_LIMIT = 20
 MAX_LIST_LIMIT = 100
 
 
-def new_job_id() -> str:
-    return f"tr_{secrets.token_urlsafe(18)}"
+JOB_TYPE_PREFIXES = {"transcription": "tr_", "diarization": "di_"}
+
+
+def new_job_id(job_type: str = "transcription") -> str:
+    return f"{JOB_TYPE_PREFIXES[job_type]}{secrets.token_urlsafe(18)}"
+
+
+def require_job(job_repository: JobRepository, job_id: str, job_type: str) -> dict:
+    job = job_repository.get(job_id)
+    if (
+        job is None
+        or not job_id.startswith(JOB_TYPE_PREFIXES[job_type])
+        or job.get("job_type", "transcription") != job_type
+    ):
+        raise HTTPException(
+            404,
+            detail={
+                "code": "job_not_found",
+                "message": f"{job_type.capitalize()} job not found",
+            },
+        )
+    return job
 
 
 def ensure_youtube_url(url: str) -> None:
@@ -175,7 +195,27 @@ def attempts_payload(job: dict) -> dict:
     }
 
 
+def job_configuration(job: dict) -> dict:
+    output_formats = set(job.get("output_formats") or ("json", "txt", "srt"))
+    configuration = {
+        "model": job["model"],
+        "language": job["language"],
+        "output_script": job["output_script"],
+        "formats": sorted(output_formats),
+    }
+    if job.get("job_type") == "diarization":
+        configuration.update({
+            "min_speakers": job.get("min_speakers"),
+            "max_speakers": job.get("max_speakers"),
+            "diarization_model": job.get("diarization_model"),
+            "diarization_model_revision": job.get("diarization_model_revision"),
+            "max_chars_per_line": job.get("max_chars_per_line"),
+        })
+    return configuration
+
+
 def job_summary(job: dict) -> dict:
+    resource = "diarizations" if job.get("job_type", "transcription") == "diarization" else "transcriptions"
     output_formats = set(job.get("output_formats") or ("json", "txt", "srt"))
     completed = job["status"] == "completed"
     artifact_columns = {
@@ -194,16 +234,12 @@ def job_summary(job: dict) -> dict:
         source["url"] = job["source_url"]
     return {
         "id": job["id"],
+        "job_type": job.get("job_type", "transcription"),
         "status": job["status"],
         "current_stage": job["current_stage"],
         "progress": job["progress"],
         "source": source,
-        "configuration": {
-            "model": job["model"],
-            "language": job["language"],
-            "output_script": job["output_script"],
-            "formats": sorted(output_formats),
-        },
+        "configuration": job_configuration(job),
         "timing": {
             "duration": job["duration"],
             "processed_seconds": job["processed_seconds"],
@@ -219,9 +255,9 @@ def job_summary(job: dict) -> dict:
             "srt": completed and "srt" in output_formats and bool(job.get("result_srt_path")),
         },
         "links": {
-            "self": f"/v1/transcriptions/{job['id']}",
+            "self": f"/v1/{resource}/{job['id']}",
             "artifacts": {
-                format: f"/v1/transcriptions/{job['id']}?format={format}"
+                format: f"/v1/{resource}/{job['id']}?format={format}"
                 for format in sorted(available_formats)
             } if completed else {},
         },
@@ -229,24 +265,21 @@ def job_summary(job: dict) -> dict:
 
 
 def job_payload(job: dict) -> dict:
+    resource = "diarizations" if job.get("job_type", "transcription") == "diarization" else "transcriptions"
     completed = job["status"] == "completed"
     output_formats = set(job.get("output_formats") or ("json", "txt", "srt"))
     artifact_links = {
-        format: f"/v1/transcriptions/{job['id']}?format={format}"
+        format: f"/v1/{resource}/{job['id']}?format={format}"
         for format in sorted(output_formats)
     } if completed else {}
     return {
         "id": job["id"],
+        "job_type": job.get("job_type", "transcription"),
         "status": job["status"],
         "current_stage": job["current_stage"],
         "progress": job["progress"],
         "source": {"type": job["source_type"]},
-        "configuration": {
-            "model": job["model"],
-            "language": job["language"],
-            "output_script": job["output_script"],
-            "formats": sorted(output_formats),
-        },
+        "configuration": job_configuration(job),
         "timing": {
             "duration": job["duration"],
             "processed_seconds": job["processed_seconds"],
@@ -262,10 +295,27 @@ def job_payload(job: dict) -> dict:
             "srt": completed and "srt" in output_formats and bool(job["result_srt_path"]),
         },
         "links": {
-            "self": f"/v1/transcriptions/{job['id']}",
+            "self": f"/v1/{resource}/{job['id']}",
             "artifacts": artifact_links,
         },
     }
+
+
+def normalize_speaker_bounds(min_speakers: int | None, max_speakers: int | None) -> tuple[int | None, int | None]:
+    if min_speakers is not None and min_speakers < 1:
+        raise HTTPException(422, detail={"code": "invalid_speaker_bounds", "message": "min_speakers must be positive"})
+    if max_speakers is not None and max_speakers < 1:
+        raise HTTPException(422, detail={"code": "invalid_speaker_bounds", "message": "max_speakers must be positive"})
+    if min_speakers is not None and max_speakers is not None and min_speakers > max_speakers:
+        raise HTTPException(422, detail={"code": "invalid_speaker_bounds", "message": "min_speakers must not exceed max_speakers"})
+    return min_speakers, max_speakers
+
+
+def normalize_max_chars_per_line(value: int | None) -> int:
+    resolved = 20 if value is None else value
+    if resolved < 1:
+        raise HTTPException(422, detail={"code": "invalid_max_chars_per_line", "message": "max_chars_per_line must be positive"})
+    return resolved
 
 
 def create_app(
@@ -358,6 +408,7 @@ def create_app(
             job_repository.create(
                 NewTranscriptionJob(
                     id=job_id,
+                    job_type="transcription",
                     source_type="upload" if file else "youtube",
                     source_url=youtube_url,
                     original_filename=filename,
@@ -395,6 +446,68 @@ def create_app(
             headers={"Location": f"/v1/transcriptions/{job_id}"},
         )
 
+    @application.post("/v1/diarizations", status_code=202)
+    async def create_diarization(
+        file: Annotated[UploadFile | None, File()] = None,
+        youtube_url: Annotated[str | None, Form()] = None,
+        language: Annotated[str | None, Form()] = None,
+        model: Annotated[str, Form()] = DEFAULT_MODEL,
+        formats: Annotated[list[str] | None, Form()] = None,
+        min_speakers: Annotated[int | None, Form()] = None,
+        max_speakers: Annotated[int | None, Form()] = None,
+        max_chars_per_line: Annotated[int | None, Form()] = None,
+    ):
+        if (file is None) == (youtube_url is None):
+            raise HTTPException(422, detail={"code": "invalid_source", "message": "Provide exactly one of file or youtube_url"})
+        if youtube_url:
+            ensure_youtube_url(youtube_url)
+        normalized_language = normalize_language(language)
+        if model not in resolved_settings.supported_models:
+            raise HTTPException(422, detail={"code": "model_not_supported", "message": "Unsupported model"})
+        normalized_formats = normalize_formats(formats)
+        min_speakers, max_speakers = normalize_speaker_bounds(min_speakers, max_speakers)
+        max_chars_per_line = normalize_max_chars_per_line(max_chars_per_line)
+        if not resolved_settings.diarization_model_revision:
+            raise HTTPException(
+                503,
+                detail={
+                    "code": "diarization_model_unavailable",
+                    "message": "Diarization is not configured with a pinned model revision",
+                },
+            )
+        job_id = new_job_id("diarization")
+        filename: str | None = None
+        source_path: str | None = None
+        try:
+            if file:
+                stored = await job_storage.store_upload(job_id, file, resolved_settings.max_upload_size_bytes)
+                filename, source_path = stored.filename, str(stored.path)
+            job_repository.create(NewTranscriptionJob(
+                id=job_id, job_type="diarization",
+                source_type="upload" if file else "youtube", source_url=youtube_url,
+                original_filename=filename, source_path=source_path, model=model,
+                language=normalized_language, output_script=output_script_for(normalized_language),
+                output_formats=normalized_formats, min_speakers=min_speakers,
+                max_speakers=max_speakers,
+                diarization_model=resolved_settings.diarization_model,
+                diarization_model_revision=resolved_settings.diarization_model_revision,
+                max_chars_per_line=max_chars_per_line,
+            ))
+        except UploadTooLarge:
+            job_storage.remove_job(job_id)
+            raise HTTPException(413, detail={"code": "upload_too_large", "message": "Uploaded file exceeds the configured upload limit"}) from None
+        except Exception:
+            job_storage.remove_job(job_id)
+            raise
+        finally:
+            if file:
+                await file.close()
+        return JSONResponse(
+            status_code=202,
+            content={"id": job_id, "status": "queued", "created_at": datetime.now(UTC).isoformat(), "links": {"self": f"/v1/diarizations/{job_id}"}},
+            headers={"Location": f"/v1/diarizations/{job_id}"},
+        )
+
     @application.get("/v1/transcriptions")
     def list_transcriptions(
         status: str | None = None,
@@ -408,7 +521,9 @@ def create_app(
             )
         page_limit = parse_list_limit(limit)
         before = decode_cursor(cursor) if cursor is not None else None
-        page = job_repository.list(status=status, before=before, limit=page_limit)
+        page = job_repository.list(
+            job_type="transcription", status=status, before=before, limit=page_limit
+        )
         has_next = len(page) > page_limit
         items = page[:page_limit]
         next_cursor = (
@@ -418,17 +533,25 @@ def create_app(
         )
         return {"items": [job_summary(job) for job in items], "next_cursor": next_cursor}
 
+    @application.get("/v1/diarizations")
+    def list_diarizations(status: str | None = None, limit: str = str(DEFAULT_LIST_LIMIT), cursor: str | None = None):
+        if status is not None and status not in PUBLIC_STATUSES:
+            raise HTTPException(400, detail={"code": "invalid_status", "message": "Unsupported job status"})
+        page_limit = parse_list_limit(limit)
+        before = decode_cursor(cursor) if cursor is not None else None
+        page = job_repository.list(job_type="diarization", status=status, before=before, limit=page_limit)
+        items = page[:page_limit]
+        return {
+            "items": [job_summary(job) for job in items],
+            "next_cursor": encode_cursor(items[-1]["created_at"], items[-1]["id"]) if len(page) > page_limit and items else None,
+        }
+
     @application.get("/v1/transcriptions/{job_id}")
     def get_transcription(
         job_id: str,
         format: Literal["json", "txt", "srt"] | None = None,
     ):
-        job = job_repository.get(job_id)
-        if job is None:
-            raise HTTPException(
-                404,
-                detail={"code": "job_not_found", "message": "Transcription job not found"},
-            )
+        job = require_job(job_repository, job_id, "transcription")
         if format is None:
             return job_payload(job)
         if job["status"] != "completed":
@@ -453,11 +576,7 @@ def create_app(
 
     @application.post("/v1/transcriptions/{job_id}/retry", status_code=202)
     def retry_transcription(job_id: str):
-        if job_repository.get(job_id) is None:
-            raise HTTPException(
-                404,
-                detail={"code": "job_not_found", "message": "Transcription job not found"},
-            )
+        require_job(job_repository, job_id, "transcription")
         requeued = job_repository.retry(job_id)
         if requeued is None:
             raise HTTPException(
@@ -475,11 +594,7 @@ def create_app(
 
     @application.post("/v1/transcriptions/{job_id}/cancel")
     def cancel_transcription(job_id: str):
-        if job_repository.get(job_id) is None:
-            raise HTTPException(
-                404,
-                detail={"code": "job_not_found", "message": "Transcription job not found"},
-            )
+        require_job(job_repository, job_id, "transcription")
         canceled = job_repository.cancel(job_id)
         if canceled is None:
             raise HTTPException(
@@ -499,12 +614,7 @@ def create_app(
 
     @application.delete("/v1/transcriptions/{job_id}", status_code=204)
     def delete_transcription(job_id: str):
-        job = job_repository.get(job_id)
-        if job is None:
-            raise HTTPException(
-                404,
-                detail={"code": "job_not_found", "message": "Transcription job not found"},
-            )
+        job = require_job(job_repository, job_id, "transcription")
         if job["status"] not in {"completed", "failed", "canceled"}:
             raise HTTPException(
                 409,
@@ -524,6 +634,52 @@ def create_app(
                     "message": "Transcription job not found",
                 },
             )
+        return None
+
+    @application.get("/v1/diarizations/{job_id}")
+    def get_diarization(job_id: str, format: Literal["json", "txt", "srt"] | None = None):
+        job = require_job(job_repository, job_id, "diarization")
+        if format is None:
+            return job_payload(job)
+        if job["status"] != "completed":
+            raise HTTPException(409, detail={"code": "result_not_ready", "message": "Result is not ready"})
+        file_metadata = {
+            "json": ("application/json", "result.json"),
+            "txt": ("text/plain; charset=utf-8", "diarized-transcript.txt"),
+            "srt": ("application/x-subrip", "diarized-transcript.srt"),
+        }
+        media_type, filename = file_metadata[format]
+        result_path = job_storage.artifact_path(job, format)
+        if result_path is None or not result_path.is_file():
+            raise HTTPException(404, detail={"code": "artifact_not_found", "message": "Artifact is unavailable"})
+        return FileResponse(result_path, media_type=media_type, filename=filename)
+
+    @application.post("/v1/diarizations/{job_id}/retry", status_code=202)
+    def retry_diarization(job_id: str):
+        require_job(job_repository, job_id, "diarization")
+        requeued = job_repository.retry(job_id)
+        if requeued is None:
+            raise HTTPException(409, detail={"code": "job_not_retryable", "message": "Diarization job cannot be retried"})
+        return JSONResponse(status_code=202, content=job_payload(requeued), headers={"Location": f"/v1/diarizations/{job_id}"})
+
+    @application.post("/v1/diarizations/{job_id}/cancel")
+    def cancel_diarization(job_id: str):
+        require_job(job_repository, job_id, "diarization")
+        canceled = job_repository.cancel(job_id)
+        if canceled is None:
+            raise HTTPException(409, detail={"code": "job_not_cancelable", "message": "Diarization job cannot be canceled"})
+        if canceled["status"] == "canceled":
+            return JSONResponse(status_code=200, content=job_payload(canceled))
+        return JSONResponse(status_code=202, content=job_payload(canceled), headers={"Location": f"/v1/diarizations/{job_id}"})
+
+    @application.delete("/v1/diarizations/{job_id}", status_code=204)
+    def delete_diarization(job_id: str):
+        job = require_job(job_repository, job_id, "diarization")
+        if job["status"] not in {"completed", "failed", "canceled"}:
+            raise HTTPException(409, detail={"code": "job_not_terminal", "message": "Diarization job must be terminal before deletion"})
+        job_storage.remove_job(job_id)
+        if job_repository.delete(job_id) is None:
+            raise HTTPException(404, detail={"code": "job_not_found", "message": "Diarization job not found"})
         return None
 
     return application

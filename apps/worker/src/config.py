@@ -14,9 +14,16 @@ class Settings:
     max_attempts: int
     heartbeat_interval_seconds: float = 5
     stale_timeout_seconds: float = 30
+    diarization_model: str = "pyannote/speaker-diarization-community-1"
+    diarization_model_revision: str | None = None
+    inference_device: str = "auto"
+    alignment_strategy: str = "forced_alignment"
 
 
 def load_settings() -> Settings:
+    alignment_strategy = os.getenv("ALIGNMENT_STRATEGY", "forced_alignment")
+    if alignment_strategy not in {"forced_alignment", "whisper_word_timestamps"}:
+        raise ValueError("ALIGNMENT_STRATEGY must be forced_alignment or whisper_word_timestamps")
     return Settings(
         database_url=os.environ["DATABASE_URL"],
         data_root=Path(os.getenv("DATA_ROOT", "/data")),
@@ -27,4 +34,10 @@ def load_settings() -> Settings:
         max_attempts=int(os.getenv("MAX_ATTEMPTS", "3")),
         heartbeat_interval_seconds=float(os.getenv("HEARTBEAT_INTERVAL_SECONDS", "5")),
         stale_timeout_seconds=float(os.getenv("STALE_TIMEOUT_SECONDS", "30")),
+        diarization_model=os.getenv(
+            "DIARIZATION_MODEL", "pyannote/speaker-diarization-community-1"
+        ),
+        diarization_model_revision=os.getenv("DIARIZATION_MODEL_REVISION"),
+        inference_device=os.getenv("INFERENCE_DEVICE", "auto"),
+        alignment_strategy=alignment_strategy,
     )

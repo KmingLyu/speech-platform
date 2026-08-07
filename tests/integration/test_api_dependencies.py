@@ -90,6 +90,7 @@ def test_job_detail_is_compact_and_exposes_lifecycle_metadata(tmp_path: Path) ->
 
     job = {
         "id": "tr_processing",
+        "job_type": "transcription",
         "status": "processing",
         "progress": 42,
         "current_stage": "transcribing",
@@ -149,6 +150,7 @@ def test_job_detail_is_compact_and_exposes_lifecycle_metadata(tmp_path: Path) ->
     payload = response.json()
     assert payload == {
         "id": "tr_processing",
+        "job_type": "transcription",
         "status": "processing",
         "current_stage": "transcribing",
         "progress": 42,
@@ -495,7 +497,8 @@ def test_job_history_returns_compact_summaries_in_stable_pages(tmp_path: Path) -
         def get(self, _job_id: str) -> dict | None:
             raise AssertionError("not used")
 
-        def list(self, *, status, before, limit):
+        def list(self, *, job_type="transcription", status, before, limit):
+            assert job_type == "transcription"
             result = [job for job in jobs if status is None or job["status"] == status]
             if before is not None:
                 result = [
@@ -551,7 +554,8 @@ def test_job_history_filters_and_rejects_invalid_pagination(tmp_path: Path) -> N
         def get(self, _job_id: str) -> dict | None:
             raise AssertionError("not used")
 
-        def list(self, *, status, before, limit):
+        def list(self, *, job_type="transcription", status, before, limit):
+            assert job_type == "transcription"
             assert status == "failed"
             assert before is None
             assert limit == 20
@@ -836,7 +840,8 @@ def test_failed_job_detail_exposes_the_failure_classification(tmp_path: Path) ->
         def get(self, job_id: str) -> dict | None:
             return failed if job_id == failed["id"] else None
 
-        def list(self, *, status, before, limit):
+        def list(self, *, job_type="transcription", status, before, limit):
+            assert job_type == "transcription"
             return [failed]
 
     class Storage:
@@ -873,3 +878,81 @@ def test_failed_job_detail_exposes_the_failure_classification(tmp_path: Path) ->
     assert detail.json()["attempts"] == {"count": 1, "automatic_count": 1}
     assert history.json()["items"][0]["error"]["retryable"] is False
     assert history.json()["items"][0]["attempts"] == {"count": 1, "automatic_count": 1}
+
+
+def test_transcription_resource_rejects_diarization_jobs_and_uses_namespaced_ids(
+    tmp_path: Path,
+) -> None:
+    sys.path.insert(0, str(API_SERVER_ROOT))
+    from src.config import Settings
+    from src.main import create_app, new_job_id
+
+    diarization_job = {
+        "id": "di_fixture",
+        "job_type": "diarization",
+        "status": "queued",
+    }
+    calls: list[str] = []
+
+    class Jobs:
+        def create(self, _job) -> None:
+            raise AssertionError("not used")
+
+        def get(self, job_id: str) -> dict | None:
+            return diarization_job if job_id == diarization_job["id"] else None
+
+        def retry(self, _job_id: str) -> dict | None:
+            calls.append("retry")
+            return diarization_job
+
+        def cancel(self, _job_id: str) -> dict | None:
+            calls.append("cancel")
+            return diarization_job
+
+        def delete(self, _job_id: str) -> dict | None:
+            calls.append("delete")
+            return diarization_job
+
+        def list(self, *, job_type="transcription", status, before, limit):
+            assert job_type == "transcription"
+            return []
+
+    class Storage:
+        async def store_upload(self, *_args, **_kwargs):
+            raise AssertionError("not used")
+
+        def remove_job(self, _job_id: str) -> None:
+            calls.append("remove")
+
+        def artifact_path(self, *_args, **_kwargs) -> Path | None:
+            raise AssertionError("not used")
+
+    app = create_app(
+        settings=Settings(
+            database_url="postgresql://unused",
+            data_root=tmp_path,
+            max_upload_size_bytes=1024,
+        ),
+        jobs=Jobs(),
+        storage=Storage(),
+        migrate=lambda: None,
+    )
+
+    with TestClient(app) as client:
+        detail = client.get("/v1/transcriptions/di_fixture")
+        retry = client.post("/v1/transcriptions/di_fixture/retry")
+        cancel = client.post("/v1/transcriptions/di_fixture/cancel")
+        delete = client.delete("/v1/transcriptions/di_fixture")
+        history = client.get("/v1/transcriptions")
+
+    assert new_job_id("transcription").startswith("tr_")
+    assert new_job_id("diarization").startswith("di_")
+    assert [response.status_code for response in (detail, retry, cancel, delete)] == [
+        404,
+        404,
+        404,
+        404,
+    ]
+    assert all(response.json()["error"]["code"] == "job_not_found" for response in (detail, retry, cancel, delete))
+    assert history.status_code == 200
+    assert calls == []
