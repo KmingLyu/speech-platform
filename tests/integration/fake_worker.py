@@ -90,9 +90,17 @@ class FakeTranscriptionEngine(TranscriptionEngine):
         *,
         model_name: str,
         language: str | None,
+        hotwords: str | None = None,
     ) -> tuple[str, list[dict]]:
         _trigger_cancellation(self.settings, self.job_id, "transcription", self.cancel_at)
         scenario = os.getenv("FAKE_SCENARIO", "default")
+        if scenario == "echo-hotwords":
+            # Make the recognizer's hotword hint observable through the artifacts.
+            text = f"hotword hint: {hotwords!r}"
+            return text, [{
+                "id": 0, "start": 0.0, "end": 12.5, "text": text,
+                "words": [{"start": 0.0, "end": 12.5, "text": text}],
+            }]
         if scenario == "empty-transcript":
             return "", []
         if scenario == "alternating":

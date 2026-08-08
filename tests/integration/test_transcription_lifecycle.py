@@ -70,9 +70,17 @@ def test_worker_reports_coarse_processing_status_and_pipeline_stage(tmp_path: Pa
             return output_path
 
     class Transcription:
-        def transcribe(self, _audio_path: Path, *, model_name: str, language: str | None):
+        def transcribe(
+            self,
+            _audio_path: Path,
+            *,
+            model_name: str,
+            language: str | None,
+            hotwords: str | None = None,
+        ):
             assert model_name == "large-v3-turbo"
             assert language is None
+            assert hotwords is None
             return "text", [{"start": 0.0, "end": 1.0, "text": "text"}]
 
     class Converter:

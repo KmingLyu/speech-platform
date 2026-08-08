@@ -48,14 +48,21 @@ class Transcriber:
                 download_root=str(self.settings.model_root),
             )
 
-    def transcribe(self, audio_path: Path, *, model_name: str, language: str | None) -> tuple[str, list[dict]]:
+    def transcribe(
+        self,
+        audio_path: Path,
+        *,
+        model_name: str,
+        language: str | None,
+        hotwords: str | None = None,
+    ) -> tuple[str, list[dict]]:
         model = self._models.get(model_name)
         if model is None:
             model = self._load_model(model_name)
             self._models[model_name] = model
         segments, _info = model.transcribe(
             str(audio_path), language=asr_language(language), vad_filter=True, beam_size=5,
-            word_timestamps=True,
+            word_timestamps=True, hotwords=hotwords,
         )
         normalized = [
             {

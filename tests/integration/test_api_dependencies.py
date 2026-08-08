@@ -160,6 +160,7 @@ def test_job_detail_is_compact_and_exposes_lifecycle_metadata(tmp_path: Path) ->
             "language": "en",
             "output_script": "original",
             "formats": ["json", "srt", "txt"],
+            "hotwords": [],
         },
         "timing": {
             "duration": 12.5,
@@ -686,6 +687,7 @@ def test_retry_returns_the_requeued_job_or_a_conflict_envelope(tmp_path: Path) -
         "language": "zh-tw",
         "output_script": "traditional",
         "formats": ["json", "srt"],
+        "hotwords": [],
     }
     assert permanent.status_code == 409
     assert permanent.json() == {

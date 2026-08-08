@@ -69,7 +69,8 @@ curl -X POST http://localhost:8080/v1/transcriptions \
   -F file=@meeting.mp3 \
   -F language=zh-tw \
   -F model=large-v3-turbo \
-  -F formats=json -F formats=srt
+  -F formats=json -F formats=srt \
+  -F hotwords=PV-1 -F hotwords=軟體
 
 curl http://localhost:8080/v1/transcriptions/tr_xxx
 curl 'http://localhost:8080/v1/transcriptions?status=queued&limit=20'
@@ -84,6 +85,8 @@ curl -X DELETE http://localhost:8080/v1/transcriptions/tr_xxx
 取消 `queued` 工作會直接變成 `canceled`，不會消耗任何 Worker Attempt；取消 `processing` 工作會回傳 `202` 並記錄 `cancel_requested`，Worker 會在下一個安全檢查點停止並確認 `canceled`，不留下可用的部分 Transcript artifact。重複呼叫 cancel 在仍為 `cancel_requested` 時是 idempotent 的；`completed`、`failed`、`canceled` 等終態工作呼叫 cancel 會回傳 `409 job_not_cancelable`。
 
 `formats` 可重複指定 `json`、`txt`、`srt`；省略時預設產出全部三種 artifact。部署可用 `SUPPORTED_MODELS`（逗號分隔）擴充 model allowlist，`large-v3-turbo` 一律是預設模型。
+
+`hotwords` 可重複指定，用來提高辨識器辨識出特定詞（例如 `PV-1`）的機率；每個 hotword trim 後不可為空、最多 50 字，整份清單最多 100 筆，違反時回傳 `422 invalid_hotwords` 且不會建立工作。Hotword 會依 `language` 決定的輸出字體先做繁簡轉換，再存進工作設定並於 `configuration.hotwords` 回傳；Retry 沿用相同的 hotwords。`POST /v1/diarizations` 也接受相同的 `hotwords` 欄位，規則與行為完全一致。
 
 部署操作參數的預設值為：上傳上限 2 GB（`MAX_UPLOAD_SIZE_MB=2048`）、自動 retry 最多 3 次（`MAX_ATTEMPTS=3`）、Worker heartbeat 每 5 秒（`HEARTBEAT_INTERVAL_SECONDS=5`），以及 30 秒 stale timeout（`STALE_TIMEOUT_SECONDS=30`）。檔案與結果不會自動過期；請透過 DELETE 明確刪除 terminal job。
 
