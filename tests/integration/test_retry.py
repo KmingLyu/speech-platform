@@ -161,6 +161,7 @@ def test_manual_retry_preserves_job_identity_and_configuration() -> None:
         "language": "zh-tw",
         "output_script": "traditional",
         "formats": ["srt"],
+        "hotwords": [],
     }
     assert requeued["progress"] == 0
 

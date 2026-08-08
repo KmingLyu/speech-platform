@@ -19,7 +19,7 @@ from .config import (
     load_settings,
 )
 from .db import PostgresJobRepository
-from .language import output_script_for
+from .language import OutputScript, convert_text, output_script_for
 from .migrations import run_migrations
 from .ports import JobRepository, JobStorage, NewTranscriptionJob, UploadTooLarge
 from .storage import LocalJobStorage
@@ -30,6 +30,8 @@ PUBLIC_STATUSES = frozenset(
 )
 DEFAULT_LIST_LIMIT = 20
 MAX_LIST_LIMIT = 100
+MAX_HOTWORDS = 100
+MAX_HOTWORD_LENGTH = 50
 
 
 JOB_TYPE_PREFIXES = {"transcription": "tr_", "diarization": "di_"}
@@ -111,6 +113,40 @@ def normalize_formats(formats: list[str] | None) -> tuple[str, ...]:
             detail={"code": "format_not_supported", "message": "Unsupported output format"},
         )
     return normalized
+
+
+def normalize_hotwords(
+    hotwords: list[str] | None, output_script: OutputScript
+) -> tuple[str, ...]:
+    """Validate the requested Hotwords and convert them to the job's output script.
+
+    Converting here, rather than in the Worker, keeps the stored list identical to
+    what the recognizer is biased toward, so the job's configuration can echo it.
+    """
+    requested = hotwords or []
+    if len(requested) > MAX_HOTWORDS:
+        raise HTTPException(
+            422,
+            detail={
+                "code": "invalid_hotwords",
+                "message": f"hotwords must contain at most {MAX_HOTWORDS} entries",
+            },
+        )
+    trimmed = [value.strip() for value in requested]
+    if any(not value for value in trimmed):
+        raise HTTPException(
+            422,
+            detail={"code": "invalid_hotwords", "message": "hotwords must not be empty"},
+        )
+    if any(len(value) > MAX_HOTWORD_LENGTH for value in trimmed):
+        raise HTTPException(
+            422,
+            detail={
+                "code": "invalid_hotwords",
+                "message": f"each hotword must be at most {MAX_HOTWORD_LENGTH} characters",
+            },
+        )
+    return tuple(convert_text(value, output_script) for value in trimmed)
 
 
 def _timestamp(value: datetime | None) -> str | None:
@@ -211,6 +247,8 @@ def job_configuration(job: dict) -> dict:
             "diarization_model_revision": job.get("diarization_model_revision"),
             "max_chars_per_line": job.get("max_chars_per_line"),
         })
+    else:
+        configuration["hotwords"] = list(job.get("hotwords") or ())
     return configuration
 
 
@@ -374,6 +412,7 @@ def create_app(
         language: Annotated[str | None, Form()] = None,
         model: Annotated[str, Form()] = DEFAULT_MODEL,
         formats: Annotated[list[str] | None, Form()] = None,
+        hotwords: Annotated[list[str] | None, Form()] = None,
     ):
         if (file is None) == (youtube_url is None):
             raise HTTPException(
@@ -392,6 +431,8 @@ def create_app(
                 detail={"code": "model_not_supported", "message": "Unsupported model"},
             )
         normalized_formats = normalize_formats(formats)
+        output_script = output_script_for(normalized_language)
+        normalized_hotwords = normalize_hotwords(hotwords, output_script)
 
         job_id = new_job_id()
         filename: str | None = None
@@ -415,8 +456,9 @@ def create_app(
                     source_path=source_path,
                     model=model,
                     language=normalized_language,
-                    output_script=output_script_for(normalized_language),
+                    output_script=output_script,
                     output_formats=normalized_formats,
+                    hotwords=normalized_hotwords,
                 )
             )
         except UploadTooLarge:

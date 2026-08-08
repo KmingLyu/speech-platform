@@ -64,6 +64,7 @@ class TranscriptionEngine(Protocol):
         *,
         model_name: str,
         language: str | None,
+        hotwords: str | None = None,
     ) -> tuple[str, list[dict]]: ...
 
 
@@ -106,6 +107,11 @@ class WorkerDependencies:
     artifacts: ArtifactWriter
     alignment: AlignmentEngine | None = None
     diarization: DiarizationEngine | None = None
+
+
+def joined_hotwords(hotwords: list[str] | None) -> str | None:
+    """Join a job's Hotwords into the single string faster-whisper accepts."""
+    return " ".join(hotwords) if hotwords else None
 
 
 def _stop_if_canceled(
@@ -191,6 +197,7 @@ def process_job(
         )
         text, segments = dependencies.transcription.transcribe(
             audio_path, model_name=job["model"], language=job["language"],
+            hotwords=joined_hotwords(job.get("hotwords")),
         )
         output_script = job.get("output_script", "original")
         text, segments = dependencies.converter.convert(
