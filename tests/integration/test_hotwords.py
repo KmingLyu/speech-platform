@@ -8,21 +8,26 @@ from harness import run_fake_worker
 
 API_URL = os.environ["API_URL"]
 
+RESOURCES = ["transcriptions", "diarizations"]
 
-def create_transcription(client: httpx.Client, hotwords: list[str], **fields: str) -> httpx.Response:
+
+def create_job(
+    client: httpx.Client, resource: str, hotwords: list[str], **fields: str
+) -> httpx.Response:
     return client.post(
-        "/v1/transcriptions",
+        f"/v1/{resource}",
         files=[
-            ("youtube_url", (None, "https://youtu.be/hotwords-fixture")),
+            ("youtube_url", (None, f"https://youtu.be/hotwords-{resource}")),
             *((key, (None, value)) for key, value in fields.items()),
             *(("hotwords", (None, hotword)) for hotword in hotwords),
         ],
     )
 
 
-def test_accepted_hotwords_are_echoed_in_the_job_configuration() -> None:
+@pytest.mark.parametrize("resource", RESOURCES)
+def test_accepted_hotwords_are_echoed_in_the_job_configuration(resource: str) -> None:
     with httpx.Client(base_url=API_URL) as client:
-        created = create_transcription(client, ["PV-1", "Meta-Energy"])
+        created = create_job(client, resource, ["PV-1", "Meta-Energy"])
         assert created.status_code == 202
         detail = client.get(created.headers["Location"])
 
@@ -30,27 +35,32 @@ def test_accepted_hotwords_are_echoed_in_the_job_configuration() -> None:
     assert detail.json()["configuration"]["hotwords"] == ["PV-1", "Meta-Energy"]
 
 
-def test_omitting_hotwords_leaves_the_job_configuration_empty() -> None:
+@pytest.mark.parametrize("resource", RESOURCES)
+def test_omitting_hotwords_leaves_the_job_configuration_empty(resource: str) -> None:
     with httpx.Client(base_url=API_URL) as client:
-        created = create_transcription(client, [])
+        created = create_job(client, resource, [])
         assert created.status_code == 202
         detail = client.get(created.headers["Location"])
 
     assert detail.json()["configuration"]["hotwords"] == []
 
 
-def test_diarization_configuration_does_not_advertise_hotwords_yet() -> None:
+def test_diarization_exposes_hotwords_alongside_its_own_configuration() -> None:
     with httpx.Client(base_url=API_URL) as client:
-        created = client.post(
-            "/v1/diarizations",
-            data={"youtube_url": "https://youtu.be/hotwords-diarization"},
+        created = create_job(
+            client, "diarizations", ["PV-1"], min_speakers="1", max_speakers="2",
+            max_chars_per_line="18",
         )
         assert created.status_code == 202
-        detail = client.get(created.headers["Location"])
+        configuration = client.get(created.headers["Location"]).json()["configuration"]
 
-    assert "hotwords" not in detail.json()["configuration"]
+    assert configuration["hotwords"] == ["PV-1"]
+    assert configuration["min_speakers"] == 1
+    assert configuration["max_speakers"] == 2
+    assert configuration["max_chars_per_line"] == 18
 
 
+@pytest.mark.parametrize("resource", RESOURCES)
 @pytest.mark.parametrize(
     ("language", "hotword", "expected"),
     [
@@ -60,16 +70,17 @@ def test_diarization_configuration_does_not_advertise_hotwords_yet() -> None:
     ],
 )
 def test_hotwords_are_converted_to_the_jobs_output_script(
-    language: str, hotword: str, expected: str,
+    resource: str, language: str, hotword: str, expected: str,
 ) -> None:
     with httpx.Client(base_url=API_URL) as client:
-        created = create_transcription(client, [hotword], language=language)
+        created = create_job(client, resource, [hotword], language=language)
         assert created.status_code == 202
         detail = client.get(created.headers["Location"])
 
     assert detail.json()["configuration"]["hotwords"] == [expected]
 
 
+@pytest.mark.parametrize("resource", RESOURCES)
 @pytest.mark.parametrize(
     ("hotwords", "message"),
     [
@@ -81,70 +92,74 @@ def test_hotwords_are_converted_to_the_jobs_output_script(
     ],
 )
 def test_invalid_hotwords_are_rejected_without_creating_a_job(
-    hotwords: list[str], message: str,
+    resource: str, hotwords: list[str], message: str,
 ) -> None:
     with httpx.Client(base_url=API_URL) as client:
-        rejected = create_transcription(client, hotwords)
-        history = client.get("/v1/transcriptions")
+        rejected = create_job(client, resource, hotwords)
+        history = client.get(f"/v1/{resource}")
 
     assert rejected.status_code == 422
     assert rejected.json() == {"error": {"code": "invalid_hotwords", "message": message}}
     assert history.json()["items"] == []
 
 
+@pytest.mark.parametrize("resource", RESOURCES)
 @pytest.mark.parametrize("hotword", ["x" * 50, " PV-1 "])
-def test_hotwords_at_the_edge_of_the_limits_are_accepted(hotword: str) -> None:
+def test_hotwords_at_the_edge_of_the_limits_are_accepted(resource: str, hotword: str) -> None:
     with httpx.Client(base_url=API_URL) as client:
-        created = create_transcription(client, [hotword])
+        created = create_job(client, resource, [hotword])
         assert created.status_code == 202
         detail = client.get(created.headers["Location"])
 
     assert detail.json()["configuration"]["hotwords"] == [hotword.strip()]
 
 
-def test_the_recognizer_receives_the_joined_converted_hotwords() -> None:
+@pytest.mark.parametrize("resource", RESOURCES)
+def test_the_recognizer_receives_the_joined_converted_hotwords(resource: str) -> None:
     with httpx.Client(base_url=API_URL) as client:
-        created = create_transcription(client, ["软件", "PV-1"], language="zh-tw")
+        created = create_job(client, resource, ["软件", "PV-1"], language="zh-tw")
         location = created.headers["Location"]
 
         run_fake_worker(env={"FAKE_SCENARIO": "echo-hotwords"})
 
-        transcript = client.get(f"{location}?format=txt")
+        artifact = client.get(f"{location}?format=json")
 
-    assert transcript.status_code == 200
-    assert transcript.text == "hotword hint: '軟體 PV-1'\n"
+    assert artifact.status_code == 200
+    assert artifact.json()["text"] == "hotword hint: '軟體 PV-1'"
 
 
-def test_a_job_without_hotwords_sends_no_hint_to_the_recognizer() -> None:
+@pytest.mark.parametrize("resource", RESOURCES)
+def test_a_job_without_hotwords_sends_no_hint_to_the_recognizer(resource: str) -> None:
     with httpx.Client(base_url=API_URL) as client:
-        created = create_transcription(client, [])
+        created = create_job(client, resource, [])
         location = created.headers["Location"]
 
         run_fake_worker(env={"FAKE_SCENARIO": "echo-hotwords"})
 
-        transcript = client.get(f"{location}?format=txt")
+        artifact = client.get(f"{location}?format=json")
 
-    assert transcript.text == "hotword hint: None\n"
+    assert artifact.json()["text"] == "hotword hint: None"
 
 
-def test_retry_reuses_the_original_hotwords() -> None:
+@pytest.mark.parametrize("resource", RESOURCES)
+def test_retry_reuses_the_original_hotwords(resource: str) -> None:
     with httpx.Client(base_url=API_URL) as client:
-        created = create_transcription(client, ["软件", "PV-1"], language="zh-tw")
+        created = create_job(client, resource, ["软件", "PV-1"], language="zh-tw")
         location = created.headers["Location"]
         job_id = created.json()["id"]
 
         run_fake_worker(env={"FAKE_SOURCE_FAILURE": "retryable", "MAX_ATTEMPTS": "1"})
         failed = client.get(location).json()
 
-        retried = client.post(f"/v1/transcriptions/{job_id}/retry")
+        retried = client.post(f"/v1/{resource}/{job_id}/retry")
         run_fake_worker(env={"FAKE_SCENARIO": "echo-hotwords"})
 
         completed = client.get(location).json()
-        transcript = client.get(f"{location}?format=txt")
+        artifact = client.get(f"{location}?format=json")
 
     assert failed["status"] == "failed"
     assert retried.status_code == 202
     assert retried.json()["configuration"]["hotwords"] == ["軟體", "PV-1"]
     assert completed["status"] == "completed"
     assert completed["configuration"]["hotwords"] == ["軟體", "PV-1"]
-    assert transcript.text == "hotword hint: '軟體 PV-1'\n"
+    assert artifact.json()["text"] == "hotword hint: '軟體 PV-1'"

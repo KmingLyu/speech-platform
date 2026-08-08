@@ -238,6 +238,7 @@ def job_configuration(job: dict) -> dict:
         "language": job["language"],
         "output_script": job["output_script"],
         "formats": sorted(output_formats),
+        "hotwords": list(job.get("hotwords") or ()),
     }
     if job.get("job_type") == "diarization":
         configuration.update({
@@ -247,8 +248,6 @@ def job_configuration(job: dict) -> dict:
             "diarization_model_revision": job.get("diarization_model_revision"),
             "max_chars_per_line": job.get("max_chars_per_line"),
         })
-    else:
-        configuration["hotwords"] = list(job.get("hotwords") or ())
     return configuration
 
 
@@ -495,6 +494,7 @@ def create_app(
         language: Annotated[str | None, Form()] = None,
         model: Annotated[str, Form()] = DEFAULT_MODEL,
         formats: Annotated[list[str] | None, Form()] = None,
+        hotwords: Annotated[list[str] | None, Form()] = None,
         min_speakers: Annotated[int | None, Form()] = None,
         max_speakers: Annotated[int | None, Form()] = None,
         max_chars_per_line: Annotated[int | None, Form()] = None,
@@ -507,6 +507,8 @@ def create_app(
         if model not in resolved_settings.supported_models:
             raise HTTPException(422, detail={"code": "model_not_supported", "message": "Unsupported model"})
         normalized_formats = normalize_formats(formats)
+        output_script = output_script_for(normalized_language)
+        normalized_hotwords = normalize_hotwords(hotwords, output_script)
         min_speakers, max_speakers = normalize_speaker_bounds(min_speakers, max_speakers)
         max_chars_per_line = normalize_max_chars_per_line(max_chars_per_line)
         if not resolved_settings.diarization_model_revision:
@@ -528,9 +530,9 @@ def create_app(
                 id=job_id, job_type="diarization",
                 source_type="upload" if file else "youtube", source_url=youtube_url,
                 original_filename=filename, source_path=source_path, model=model,
-                language=normalized_language, output_script=output_script_for(normalized_language),
-                output_formats=normalized_formats, min_speakers=min_speakers,
-                max_speakers=max_speakers,
+                language=normalized_language, output_script=output_script,
+                output_formats=normalized_formats, hotwords=normalized_hotwords,
+                min_speakers=min_speakers, max_speakers=max_speakers,
                 diarization_model=resolved_settings.diarization_model,
                 diarization_model_revision=resolved_settings.diarization_model_revision,
                 max_chars_per_line=max_chars_per_line,

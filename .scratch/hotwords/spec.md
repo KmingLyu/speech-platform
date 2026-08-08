@@ -1,6 +1,6 @@
 # Hotwords
 
-**Status:** in-progress
+**Status:** completed
 
 ## Problem Statement
 

@@ -108,7 +108,7 @@ GET /v1/transcriptions/{id}
 
 Job 會保存建立時的 `Source`、`language`、`model`、`formats` 與 `hotwords`；Retry 使用相同設定，不能修改既有 Job 的 Transcription configuration。
 
-`hotwords` 會先依 `output_script` 轉換成與輸出文字相同的字體（`zh-tw` 轉繁體、`zh-cn` 轉簡體），再存進 Job 並在 `configuration.hotwords` 回傳；Worker 每次 Attempt 都把轉換後的清單以空白串接後交給辨識器當作提示。不合法的 `hotwords` 會回傳 `422 invalid_hotwords`，且不會建立 Job。
+`hotwords` 會先依 `output_script` 轉換成與輸出文字相同的字體（`zh-tw` 轉繁體、`zh-cn` 轉簡體），再存進 Job 並在 `configuration.hotwords` 回傳；Worker 每次 Attempt 都把轉換後的清單以空白串接後交給辨識器當作提示。不合法的 `hotwords` 會回傳 `422 invalid_hotwords`，且不會建立 Job。`POST /v1/diarizations` 接受相同的 `hotwords` 欄位，驗證、轉換與 Retry 行為完全一致。
 
 回應中的 `attempts.count` 是這個 Job 累計的 Attempt 次數，`attempts.automatic_count` 是目前自動重試預算已使用的次數；`error.retryable` 表示最後一次失敗是否可能靠再一次 Attempt 恢復。
 
