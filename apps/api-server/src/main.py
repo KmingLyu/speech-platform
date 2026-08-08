@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, urlparse
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse, JSONResponse
 
 from .config import (
@@ -725,6 +726,28 @@ def create_app(
         if job_repository.delete(job_id) is None:
             raise HTTPException(404, detail={"code": "job_not_found", "message": "Diarization job not found"})
         return None
+
+    def custom_openapi() -> dict:
+        if application.openapi_schema:
+            return application.openapi_schema
+
+        schema = get_openapi(
+            title=application.title,
+            version=application.version,
+            routes=application.routes,
+        )
+        for path in ("/v1/transcriptions", "/v1/diarizations"):
+            operation = schema["paths"][path]["post"]
+            multipart = operation["requestBody"]["content"]["multipart/form-data"]
+            multipart.setdefault("encoding", {})["hotwords"] = {
+                "style": "form",
+                "explode": True,
+            }
+
+        application.openapi_schema = schema
+        return schema
+
+    application.openapi = custom_openapi
 
     return application
 

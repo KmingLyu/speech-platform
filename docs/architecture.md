@@ -86,7 +86,7 @@ Content-Type: multipart/form-data
 | `language` | 否 | 例如 `zh`、`zh-tw`、`zh-cn`、`en`；不填則自動偵測 |
 | `model` | 否 | 預設 `large-v3-turbo`；必須在部署設定的 allowlist 中 |
 | `formats` | 否 | 可重複指定 `json`、`txt`、`srt`；省略時三者全選 |
-| `hotwords` | 否 | 可重複指定的 Hotword；每個 trim 後不可為空且最多 50 字，整份清單最多 100 筆 |
+| `hotwords` | 否 | 可重複指定的 Hotword；每個 trim 後不可為空且最多 50 字，整份清單最多 100 筆。Multipart request 必須以 repeated 欄位傳送，不以逗號拆分 |
 
 成功後回傳 `202`，不等待辨識完成。
 
@@ -109,6 +109,8 @@ GET /v1/transcriptions/{id}
 Job 會保存建立時的 `Source`、`language`、`model`、`formats` 與 `hotwords`；Retry 使用相同設定，不能修改既有 Job 的 Transcription configuration。
 
 `hotwords` 會先依 `output_script` 轉換成與輸出文字相同的字體（`zh-tw` 轉繁體、`zh-cn` 轉簡體），再存進 Job 並在 `configuration.hotwords` 回傳；Worker 每次 Attempt 都把轉換後的清單以空白串接後交給辨識器當作提示。不合法的 `hotwords` 會回傳 `422 invalid_hotwords`，且不會建立 Job。`POST /v1/diarizations` 接受相同的 `hotwords` 欄位，驗證、轉換與 Retry 行為完全一致。
+
+Swagger/OpenAPI 對 `multipart/form-data` 的 `hotwords` 使用 `style=form` 與 `explode=true`；因此四個 Hotword 應以四個同名欄位傳送，例如 `-F 'hotwords=欒博' -F 'hotwords=PV'`。Hotword 內容中的逗號是字面內容，不會被 API 拆成多筆。
 
 回應中的 `attempts.count` 是這個 Job 累計的 Attempt 次數，`attempts.automatic_count` 是目前自動重試預算已使用的次數；`error.retryable` 表示最後一次失敗是否可能靠再一次 Attempt 恢復。
 
