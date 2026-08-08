@@ -23,10 +23,10 @@ class PostgresJobRepository(JobRepository):
                 """
                 INSERT INTO transcription_jobs
                     (id, status, source_type, source_url, original_filename,
-                     source_path, model, language, output_script, output_formats,
+                     source_path, model, language, output_formats,
                      hotwords, job_type, min_speakers, max_speakers,
                      diarization_model, diarization_model_revision, max_chars_per_line)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     job.id,
@@ -37,7 +37,6 @@ class PostgresJobRepository(JobRepository):
                     job.source_path,
                     job.model,
                     job.language,
-                    job.output_script,
                     list(job.output_formats),
                     list(job.hotwords),
                     job.job_type,

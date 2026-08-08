@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import cast
 
 from .adapters import FilesystemArtifactWriter, PostgresJobLifecycle
 from .config import Settings
@@ -11,7 +10,7 @@ from .processor import (
     TranscriptionEngine,
     WorkerDependencies,
 )
-from .script_converter import OutputScript, convert_segments, convert_text
+from .script_converter import convert_transcript
 from .source import acquire_source
 from .transcriber import Transcriber
 from .diarizer import PyannoteCommunityDiarization
@@ -37,13 +36,9 @@ class ProductionTranscriptConverter(TranscriptConverter):
         self,
         text: str,
         segments: list[dict],
-        output_script: str,
+        language: str | None,
     ) -> tuple[str, list[dict]]:
-        script = cast(OutputScript, output_script)
-        return (
-            convert_text(text, script),
-            convert_segments(segments, script),
-        )
+        return convert_transcript(text, segments, language)
 
 
 def production_dependencies(

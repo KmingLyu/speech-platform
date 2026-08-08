@@ -84,8 +84,8 @@ def test_worker_reports_coarse_processing_status_and_pipeline_stage(tmp_path: Pa
             return "text", [{"start": 0.0, "end": 1.0, "text": "text"}]
 
     class Converter:
-        def convert(self, text: str, segments: list[dict], output_script: str):
-            assert output_script == "original"
+        def convert(self, text: str, segments: list[dict], language: str | None):
+            assert language is None
             return text, segments
 
     class Artifacts:
@@ -118,7 +118,6 @@ def test_worker_reports_coarse_processing_status_and_pipeline_stage(tmp_path: Pa
             "id": "tr_worker",
             "model": "large-v3-turbo",
             "language": None,
-            "output_script": "original",
             "output_formats": ("json", "txt", "srt"),
         },
     )

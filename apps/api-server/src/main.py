@@ -20,7 +20,6 @@ from .config import (
     load_settings,
 )
 from .db import PostgresJobRepository
-from .language import OutputScript, convert_text, output_script_for
 from .migrations import run_migrations
 from .ports import JobRepository, JobStorage, NewTranscriptionJob, UploadTooLarge
 from .storage import LocalJobStorage
@@ -117,13 +116,9 @@ def normalize_formats(formats: list[str] | None) -> tuple[str, ...]:
 
 
 def normalize_hotwords(
-    hotwords: list[str] | None, output_script: OutputScript
+    hotwords: list[str] | None,
 ) -> tuple[str, ...]:
-    """Validate the requested Hotwords and convert them to the job's output script.
-
-    Converting here, rather than in the Worker, keeps the stored list identical to
-    what the recognizer is biased toward, so the job's configuration can echo it.
-    """
+    """Validate the requested Hotwords while preserving their original text."""
     requested = hotwords or []
     if len(requested) > MAX_HOTWORDS:
         raise HTTPException(
@@ -147,7 +142,7 @@ def normalize_hotwords(
                 "message": f"each hotword must be at most {MAX_HOTWORD_LENGTH} characters",
             },
         )
-    return tuple(convert_text(value, output_script) for value in trimmed)
+    return tuple(trimmed)
 
 
 def _timestamp(value: datetime | None) -> str | None:
@@ -237,7 +232,6 @@ def job_configuration(job: dict) -> dict:
     configuration = {
         "model": job["model"],
         "language": job["language"],
-        "output_script": job["output_script"],
         "formats": sorted(output_formats),
         "hotwords": list(job.get("hotwords") or ()),
     }
@@ -431,8 +425,7 @@ def create_app(
                 detail={"code": "model_not_supported", "message": "Unsupported model"},
             )
         normalized_formats = normalize_formats(formats)
-        output_script = output_script_for(normalized_language)
-        normalized_hotwords = normalize_hotwords(hotwords, output_script)
+        normalized_hotwords = normalize_hotwords(hotwords)
 
         job_id = new_job_id()
         filename: str | None = None
@@ -456,7 +449,6 @@ def create_app(
                     source_path=source_path,
                     model=model,
                     language=normalized_language,
-                    output_script=output_script,
                     output_formats=normalized_formats,
                     hotwords=normalized_hotwords,
                 )
@@ -508,8 +500,7 @@ def create_app(
         if model not in resolved_settings.supported_models:
             raise HTTPException(422, detail={"code": "model_not_supported", "message": "Unsupported model"})
         normalized_formats = normalize_formats(formats)
-        output_script = output_script_for(normalized_language)
-        normalized_hotwords = normalize_hotwords(hotwords, output_script)
+        normalized_hotwords = normalize_hotwords(hotwords)
         min_speakers, max_speakers = normalize_speaker_bounds(min_speakers, max_speakers)
         max_chars_per_line = normalize_max_chars_per_line(max_chars_per_line)
         if not resolved_settings.diarization_model_revision:
@@ -531,7 +522,7 @@ def create_app(
                 id=job_id, job_type="diarization",
                 source_type="upload" if file else "youtube", source_url=youtube_url,
                 original_filename=filename, source_path=source_path, model=model,
-                language=normalized_language, output_script=output_script,
+                language=normalized_language,
                 output_formats=normalized_formats, hotwords=normalized_hotwords,
                 min_speakers=min_speakers, max_speakers=max_speakers,
                 diarization_model=resolved_settings.diarization_model,

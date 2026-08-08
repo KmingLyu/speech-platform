@@ -21,7 +21,7 @@ def _write_text_durably(path: Path, content: str) -> None:
 
 
 def export_result(job_id: str, *, output_dir: Path, text: str, language: str | None,
-                  duration: float, model: str, output_script: str,
+                  duration: float, model: str,
                   segments: list[dict], formats: tuple[str, ...],
                   job_type: str = "transcription", metadata: dict | None = None) -> dict[str, Path]:
     output_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -37,7 +37,6 @@ def export_result(job_id: str, *, output_dir: Path, text: str, language: str | N
                 "duration": duration, "text": text, "segments": segments,
                 "metadata": {
                     "provider": "faster-whisper", "model": model,
-                    "output_script": output_script,
                     **(metadata or {}),
                 },
             }, ensure_ascii=False, indent=2))

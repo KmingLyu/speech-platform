@@ -108,7 +108,7 @@ GET /v1/transcriptions/{id}
 
 Job 會保存建立時的 `Source`、`language`、`model`、`formats` 與 `hotwords`；Retry 使用相同設定，不能修改既有 Job 的 Transcription configuration。
 
-`hotwords` 會先依 `output_script` 轉換成與輸出文字相同的字體（`zh-tw` 轉繁體、`zh-cn` 轉簡體），再存進 Job 並在 `configuration.hotwords` 回傳；Worker 每次 Attempt 都把轉換後的清單以空白串接後交給辨識器當作提示。不合法的 `hotwords` 會回傳 `422 invalid_hotwords`，且不會建立 Job。`POST /v1/diarizations` 接受相同的 `hotwords` 欄位，驗證、轉換與 Retry 行為完全一致。
+`hotwords` 會以使用者提供的原始文字存進 Job、在每次 Attempt 以空白串接後直接交給辨識器當作提示，並由 `configuration.hotwords` 原樣回傳；API 不翻譯或做繁簡轉換。不合法的 `hotwords` 會回傳 `422 invalid_hotwords`，且不會建立 Job。`POST /v1/diarizations` 接受相同的 `hotwords` 欄位，驗證、原樣傳遞與 Retry 行為完全一致。
 
 Swagger/OpenAPI 對 `multipart/form-data` 的 `hotwords` 使用 `style=form` 與 `explode=true`；因此四個 Hotword 應以四個同名欄位傳送，例如 `-F 'hotwords=欒博' -F 'hotwords=PV'`。Hotword 內容中的逗號是字面內容，不會被 API 拆成多筆。
 
@@ -169,7 +169,7 @@ Worker 把每次失敗分類為 Retryable failure 或 Permanent failure，並以
 
 ## 簡繁輸出轉換
 
-`language=zh-tw` 會先以 faster-whisper 支援的 `zh` 執行辨識，再在產出檔案前使用 OpenCC 的 `s2twp.json` 轉為繁體台灣用語；`language=zh-cn` 同樣以 `zh` 辨識，再使用 `tw2sp.json` 轉為簡體中國大陸用語。單純 `zh` 或未指定時，辨識文字維持模型原始輸出。這不是翻譯，也不改變時間軸；結果 JSON 的 `metadata.output_script` 會記錄實際輸出模式。
+`language=zh-tw` 與 `language=zh-cn` 會在 Worker 先以 faster-whisper 支援的 `zh` 執行辨識，再立即使用 OpenCC 將全文、ASR segments 與 word text 一次轉為繁體台灣或簡體中國大陸用語；轉換後的 Transcript 直接覆蓋辨識器原始文字，供後續 alignment、diarization 與 export 使用。單純 `zh` 或未指定時，辨識文字維持模型原始輸出。這不是翻譯，也不改變時間軸；API 與 artifact 不保存額外的 output-script 欄位。
 
 ## 現階段的限制
 

@@ -198,7 +198,7 @@ class IdentityTranscriptConverter(TranscriptConverter):
         self,
         text: str,
         segments: list[dict],
-        output_script: str,
+        language: str | None,
     ) -> tuple[str, list[dict]]:
         return text, segments
 

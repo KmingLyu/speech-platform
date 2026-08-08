@@ -73,7 +73,7 @@ class TranscriptConverter(Protocol):
         self,
         text: str,
         segments: list[dict],
-        output_script: str,
+        language: str | None,
     ) -> tuple[str, list[dict]]: ...
 
 
@@ -87,7 +87,6 @@ class ArtifactWriter(Protocol):
         language: str | None,
         duration: float,
         model: str,
-        output_script: str,
         segments: list[dict],
         formats: tuple[str, ...],
         job_type: str = "transcription",
@@ -199,11 +198,10 @@ def process_job(
             audio_path, model_name=job["model"], language=job["language"],
             hotwords=joined_hotwords(job.get("hotwords")),
         )
-        output_script = job.get("output_script", "original")
         text, segments = dependencies.converter.convert(
             text,
             segments,
-            output_script,
+            job.get("language"),
         )
         metadata: dict = {}
         if job.get("job_type", "transcription") == "diarization":
@@ -278,7 +276,7 @@ def process_job(
         ]
         artifacts = dependencies.artifacts.write(
             job_id, output_dir=job_root / "result", text=text, language=job["language"],
-            duration=duration, model=job["model"], output_script=output_script,
+            duration=duration, model=job["model"],
             segments=public_segments, formats=tuple(job.get("output_formats", ("json", "txt", "srt"))),
             job_type=job.get("job_type", "transcription"),
             metadata=metadata,

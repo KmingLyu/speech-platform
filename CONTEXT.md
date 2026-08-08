@@ -87,16 +87,12 @@ _Avoid_: Timed text（本專案對外使用較不一致）
 _Avoid_: Locale（目前 API 的用途不只表示地區）
 
 **Transcription configuration**:
-一個 Transcription job 建立時確定的 Source、Language preference、model、Output format 選擇與可選的 Hotword 清單；同一 job 的 Retry 不會修改這些設定。
+一個 Transcription job 建立時確定的 Source、Language preference、model、Output format 選擇與可選的 Hotword 清單；同一 job 的 Retry 不會修改這些設定。Language preference 同時決定中文 Transcript 的輸出文字系統，但不改變 Hotword。
 _Avoid_: Runtime option（設定屬於工作本身，不是每次 Attempt 臨時改變的選項）
 
 **Hotword**:
-使用者在建立 Transcription job 或 Diarization job 時提供的詞或詞組，用於提高辨識器辨識出該詞的機率；不保證一定出現在結果中，也不代表結果只能是這些詞。
+使用者在建立 Transcription job 或 Diarization job 時提供的原始詞或詞組，用於提高辨識器辨識出該詞的機率；Hotword 不因 Language preference 或模型偵測語言而翻譯、繁簡轉換或改寫。不保證一定出現在結果中，也不代表結果只能是這些詞。
 _Avoid_: Keyword（容易讓人以為是搜尋或標記功能，而不是辨識提示）、Vocabulary（過於籠統，容易讓人以為是完整自訂字典）
-
-**Output script**:
-Transcription 文字使用的文字系統與地區用語；目前由 `Language preference` 隱含決定，`zh-tw` 對應繁體台灣用語、`zh-cn` 對應簡體中國大陸用語。
-_Avoid_: Translation（文字系統轉換不改變語意，也不是翻譯）
 
 **Segment**:
 Transcription 中一段連續語音及其文字，至少包含 `start`、`end` 與 `text`；目前時間軸粒度只到 segment，不包含逐詞時間。

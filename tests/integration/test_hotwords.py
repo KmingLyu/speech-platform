@@ -69,15 +69,15 @@ def test_diarization_exposes_hotwords_alongside_its_own_configuration() -> None:
         ("en", "软件", "软件"),
     ],
 )
-def test_hotwords_are_converted_to_the_jobs_output_script(
-    resource: str, language: str, hotword: str, expected: str,
+def test_hotwords_are_preserved_in_the_jobs_configuration(
+    resource: str, language: str, hotword: str, _expected: str,
 ) -> None:
     with httpx.Client(base_url=API_URL) as client:
         created = create_job(client, resource, [hotword], language=language)
         assert created.status_code == 202
         detail = client.get(created.headers["Location"])
 
-    assert detail.json()["configuration"]["hotwords"] == [expected]
+    assert detail.json()["configuration"]["hotwords"] == [hotword]
 
 
 @pytest.mark.parametrize("resource", RESOURCES)
@@ -115,7 +115,7 @@ def test_hotwords_at_the_edge_of_the_limits_are_accepted(resource: str, hotword:
 
 
 @pytest.mark.parametrize("resource", RESOURCES)
-def test_the_recognizer_receives_the_joined_converted_hotwords(resource: str) -> None:
+def test_the_recognizer_receives_the_joined_original_hotwords(resource: str) -> None:
     with httpx.Client(base_url=API_URL) as client:
         created = create_job(client, resource, ["软件", "PV-1"], language="zh-tw")
         location = created.headers["Location"]
@@ -125,7 +125,7 @@ def test_the_recognizer_receives_the_joined_converted_hotwords(resource: str) ->
         artifact = client.get(f"{location}?format=json")
 
     assert artifact.status_code == 200
-    assert artifact.json()["text"] == "hotword hint: '軟體 PV-1'"
+    assert artifact.json()["text"] == "hotword hint: '软件 PV-1'"
 
 
 @pytest.mark.parametrize("resource", RESOURCES)
@@ -159,7 +159,7 @@ def test_retry_reuses_the_original_hotwords(resource: str) -> None:
 
     assert failed["status"] == "failed"
     assert retried.status_code == 202
-    assert retried.json()["configuration"]["hotwords"] == ["軟體", "PV-1"]
+    assert retried.json()["configuration"]["hotwords"] == ["软件", "PV-1"]
     assert completed["status"] == "completed"
-    assert completed["configuration"]["hotwords"] == ["軟體", "PV-1"]
-    assert artifact.json()["text"] == "hotword hint: '軟體 PV-1'"
+    assert completed["configuration"]["hotwords"] == ["软件", "PV-1"]
+    assert artifact.json()["text"] == "hotword hint: '软件 PV-1'"

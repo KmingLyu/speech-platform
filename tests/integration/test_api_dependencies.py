@@ -97,7 +97,6 @@ def test_job_detail_is_compact_and_exposes_lifecycle_metadata(tmp_path: Path) ->
         "source_type": "upload",
         "model": "large-v3-turbo",
         "language": "en",
-        "output_script": "original",
         "duration": 12.5,
         "processed_seconds": 8.0,
         "created_at": datetime(2026, 7, 25, tzinfo=UTC),
@@ -158,7 +157,6 @@ def test_job_detail_is_compact_and_exposes_lifecycle_metadata(tmp_path: Path) ->
         "configuration": {
             "model": "large-v3-turbo",
             "language": "en",
-            "output_script": "original",
             "formats": ["json", "srt", "txt"],
             "hotwords": [],
         },
@@ -199,7 +197,6 @@ def test_job_detail_supports_every_public_lifecycle_status(
         "source_type": "youtube",
         "model": "large-v3-turbo",
         "language": None,
-        "output_script": "original",
         "duration": None,
         "processed_seconds": None,
         "created_at": datetime(2026, 7, 25, tzinfo=UTC),
@@ -429,7 +426,6 @@ def test_creation_accepts_single_video_shapes_and_requested_formats(tmp_path: Pa
 
     assert valid.status_code == 202
     assert jobs.jobs[0].language == "zh-tw"
-    assert jobs.jobs[0].output_script == "traditional"
     assert jobs.jobs[0].output_formats == ("json", "srt")
     assert channel.json()["error"]["code"] == "youtube_url_not_supported"
 
@@ -451,7 +447,6 @@ def test_job_history_returns_compact_summaries_in_stable_pages(tmp_path: Path) -
             "source_url": None,
             "model": "large-v3-turbo",
             "language": "en",
-            "output_script": "original",
             "output_formats": ["json", "txt"],
             "duration": 12.5,
             "processed_seconds": 12.5,
@@ -475,7 +470,6 @@ def test_job_history_returns_compact_summaries_in_stable_pages(tmp_path: Path) -
             "source_url": "https://youtu.be/example",
             "model": "large-v3-turbo",
             "language": None,
-            "output_script": "original",
             "output_formats": ["json", "txt", "srt"],
             "duration": None,
             "processed_seconds": None,
@@ -614,7 +608,6 @@ def test_retry_returns_the_requeued_job_or_a_conflict_envelope(tmp_path: Path) -
             "original_filename": None,
             "model": "large-v3-turbo",
             "language": "zh-tw",
-            "output_script": "traditional",
             "output_formats": ["json", "srt"],
             "duration": None,
             "processed_seconds": None,
@@ -685,7 +678,6 @@ def test_retry_returns_the_requeued_job_or_a_conflict_envelope(tmp_path: Path) -
     assert payload["configuration"] == {
         "model": "large-v3-turbo",
         "language": "zh-tw",
-        "output_script": "traditional",
         "formats": ["json", "srt"],
         "hotwords": [],
     }
@@ -718,7 +710,6 @@ def test_cancel_returns_the_canceled_or_requested_job_or_a_conflict_envelope(
             "original_filename": None,
             "model": "large-v3-turbo",
             "language": None,
-            "output_script": "original",
             "output_formats": ["json", "txt", "srt"],
             "duration": None,
             "processed_seconds": None,
@@ -817,7 +808,6 @@ def test_failed_job_detail_exposes_the_failure_classification(tmp_path: Path) ->
         "original_filename": None,
         "model": "large-v3-turbo",
         "language": None,
-        "output_script": "original",
         "output_formats": ["json"],
         "duration": None,
         "processed_seconds": None,

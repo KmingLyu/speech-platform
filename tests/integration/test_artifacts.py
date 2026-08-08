@@ -24,7 +24,6 @@ def test_export_failure_does_not_publish_partial_artifacts(tmp_path: Path) -> No
             language="en",
             duration=1.0,
             model="large-v3-turbo",
-            output_script="original",
             segments=[{"id": 0, "start": 0.0, "end": 1.0}],
             formats=("json", "txt", "srt"),
         )

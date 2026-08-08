@@ -159,7 +159,6 @@ def test_manual_retry_preserves_job_identity_and_configuration() -> None:
     assert requeued["configuration"] == {
         "model": "large-v3-turbo",
         "language": "zh-tw",
-        "output_script": "traditional",
         "formats": ["srt"],
         "hotwords": [],
     }

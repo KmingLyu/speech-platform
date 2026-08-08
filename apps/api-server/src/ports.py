@@ -15,7 +15,6 @@ class NewTranscriptionJob:
     source_path: str | None
     model: str
     language: str | None
-    output_script: str
     output_formats: tuple[str, ...] = ("json", "txt", "srt")
     hotwords: tuple[str, ...] = ()
     status: str = "queued"

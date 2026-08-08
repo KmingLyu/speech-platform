@@ -67,6 +67,7 @@ def test_schema_migrations_are_repeatable_on_clean_database() -> None:
         ("007_add_diarization_model_revision.sql",),
         ("008_add_diarization_display_line_capacity.sql",),
         ("009_add_hotwords.sql",),
+        ("010_remove_output_script.sql",),
     ]
 
 
@@ -91,7 +92,7 @@ def test_schema_migrations_upgrade_existing_database() -> None:
                 "SELECT name FROM schema_migrations ORDER BY name"
             ).fetchall()
 
-    assert output_script == ("'original'::character varying", "NO")
+    assert output_script is None
     assert applied == [
         ("001_create_transcription_jobs.sql",),
         ("002_add_output_script.sql",),
@@ -102,6 +103,7 @@ def test_schema_migrations_upgrade_existing_database() -> None:
         ("007_add_diarization_model_revision.sql",),
         ("008_add_diarization_display_line_capacity.sql",),
         ("009_add_hotwords.sql",),
+        ("010_remove_output_script.sql",),
     ]
 
 

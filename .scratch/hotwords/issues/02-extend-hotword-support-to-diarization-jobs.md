@@ -7,8 +7,8 @@
 **Status:** closed
 
 - [x] A Diarization creation request accepts the `hotwords` field with the same validation rules as Transcription (non-empty after trimming, at most 50 characters each, at most 100 entries).
-- [x] Diarization's internal transcription step receives the same converted hotword list, using the mechanism built in 01, with no divergent behavior between the two job types.
-- [x] The Diarization job's observable configuration exposes the converted hotword list alongside existing diarization-specific fields (`min_speakers`, `max_speakers`, `max_chars_per_line`, etc.).
+- [x] Diarization's internal transcription step receives the same original hotword list, using the mechanism built in 01, with no divergent behavior between the two job types.
+- [x] The Diarization job's observable configuration exposes the original hotword list alongside existing diarization-specific fields (`min_speakers`, `max_speakers`, `max_chars_per_line`, etc.).
 - [x] Retry of a Diarization job reuses its original hotwords unchanged.
 - [x] Black-box Diarization workflow tests cover acceptance, script conversion, and retry preservation, mirroring the Transcription coverage from 01.
 
