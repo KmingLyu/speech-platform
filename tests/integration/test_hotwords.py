@@ -70,7 +70,7 @@ def test_diarization_exposes_hotwords_alongside_its_own_configuration() -> None:
     ],
 )
 def test_hotwords_are_preserved_in_the_jobs_configuration(
-    resource: str, language: str, hotword: str, _expected: str,
+    resource: str, language: str, hotword: str, expected: str,
 ) -> None:
     with httpx.Client(base_url=API_URL) as client:
         created = create_job(client, resource, [hotword], language=language)

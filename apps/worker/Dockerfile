@@ -1,6 +1,6 @@
 FROM denoland/deno:2.3.0 AS deno
 
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -22,6 +22,11 @@ COPY apps/worker/requirements.txt ./requirements.txt
 RUN pip3 install --no-cache-dir --pre -r requirements.txt
 
 COPY apps/worker/src ./src
-COPY scripts/prepare-diarization-model.py scripts/smoke-diarization-model.py ./scripts/
+COPY scripts/prepare-diarization-model.py scripts/smoke-diarization-model.py scripts/prepare-breeze-model.py scripts/smoke-breeze-model.py ./scripts/
 
 CMD ["python3", "-m", "src.main"]
+
+FROM runtime AS model-tools
+RUN pip3 install --no-cache-dir transformers==4.48.3 ctranslate2==4.6.0
+
+FROM runtime AS worker

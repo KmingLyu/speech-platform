@@ -6,6 +6,7 @@ from faster_whisper import WhisperModel
 from .config import Settings
 from .device import BackendDevice
 from .script_converter import asr_language
+from .asr_models import resolve_asr_model
 
 
 logger = logging.getLogger(__name__)
@@ -25,9 +26,10 @@ class Transcriber:
         self._models: dict[str, WhisperModel] = {}
 
     def _load_model(self, model_name: str) -> WhisperModel:
+        model_path = resolve_asr_model(model_name, self.settings.model_root)
         try:
             return WhisperModel(
-                model_name,
+                model_path,
                 device=self.device.device,
                 compute_type=self.device.compute_type,
                 download_root=str(self.settings.model_root),
@@ -42,7 +44,7 @@ class Transcriber:
                 exc_info=True,
             )
             return WhisperModel(
-                model_name,
+                model_path,
                 device="cpu",
                 compute_type="int8",
                 download_root=str(self.settings.model_root),
@@ -58,6 +60,10 @@ class Transcriber:
     ) -> tuple[str, list[dict]]:
         model = self._models.get(model_name)
         if model is None:
+            # Jobs are serialized. Keep only one ASR model resident when switching.
+            for previous in self._models.values():
+                previous.model.unload_model()
+            self._models.clear()
             model = self._load_model(model_name)
             self._models[model_name] = model
         segments, _info = model.transcribe(

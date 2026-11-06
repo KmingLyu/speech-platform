@@ -738,7 +738,7 @@ def create_app(
         application.openapi_schema = schema
         return schema
 
-    application.openapi = custom_openapi
+    application.openapi = custom_openapi  # type: ignore[method-assign]
 
     return application
 

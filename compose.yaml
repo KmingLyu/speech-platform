@@ -10,7 +10,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       DATA_ROOT: ${DATA_ROOT:-/data}
       MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-2048}
-      SUPPORTED_MODELS: ${SUPPORTED_MODELS:-large-v3-turbo}
+      SUPPORTED_MODELS: ${SUPPORTED_MODELS:-large-v3-turbo,breeze-asr-25}
       DIARIZATION_MODEL: ${DIARIZATION_MODEL:-pyannote/speaker-diarization-community-1}
       DIARIZATION_MODEL_REVISION: ${DIARIZATION_MODEL_REVISION:?DIARIZATION_MODEL_REVISION must be set to a pinned revision}
     volumes:
@@ -54,6 +54,19 @@ services:
     depends_on:
       api-server:
         condition: service_healthy
+
+  model-tools:
+    profiles: [model-tools]
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+      target: model-tools
+    environment:
+      MODEL_ROOT: ${MODEL_ROOT:-/models}
+      PYTHONPATH: /app
+    volumes:
+      - ./models:/models
+    command: [python3, scripts/prepare-breeze-model.py]
 
   postgres:
     image: postgres:17

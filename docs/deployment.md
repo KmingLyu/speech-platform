@@ -40,7 +40,7 @@ DATABASE_URL=postgresql://speech_asr:<same-password>@postgres:5432/speech_asr
 
 | 設定 | 預設 | 用途 |
 | --- | ---: | --- |
-| `SUPPORTED_MODELS` | `large-v3-turbo` | API model allowlist；預設模型固定為 `large-v3-turbo` |
+| `SUPPORTED_MODELS` | `large-v3-turbo,breeze-asr-25` | API model allowlist；預設模型固定為 `large-v3-turbo` |
 | `INFERENCE_DEVICE` | `auto` | `auto` 優先 GPU 並允許 CPU fallback；`cuda` 嚴格要求 GPU；`cpu` 強制使用 CPU |
 | `ALIGNMENT_STRATEGY` | `forced_alignment` | `forced_alignment` 優先 forced alignment 並在不可用時回退至 Whisper word timestamps；`whisper_word_timestamps` 直接使用 Whisper timestamps |
 | `MAX_UPLOAD_SIZE_MB` | `2048` | streaming upload safety guard |
@@ -130,6 +130,35 @@ curl -fso /tmp/transcript.json "http://localhost:8080/v1/transcriptions/$id?form
 ```
 
 確認 completed job 的 JSON/TXT 內容、segment 時間軸與語言/文字系統符合預期；此檢查只驗證功能可用性，不以 WER 或 CER 作為 MVP gate。
+
+## Breeze-ASR-25
+
+API 的 `model=breeze-asr-25` 對應官方 `MediaTek-Research/Breeze-ASR-25` 的固定 revision `cffe7ccb404d025296a00758d0a33468bec3a9d0`，以 CTranslate2 4.6.0 轉為 FP16。模型權重採 Apache-2.0；轉換目錄保留上游 README 與授權檔（若有）。這個選項同時適用於 transcription 與 diarization；預設模型仍為 `large-v3-turbo`。
+
+先完成一次模型準備，再啟用接受此模型的 API：
+
+```bash
+docker compose --profile model-tools run --rm --build model-tools
+# 既有 .env 的 SUPPORTED_MODELS 也須包含 breeze-asr-25
+docker compose up -d --build api-server worker
+```
+
+`model-tools` profile 使用獨立 build target，額外的 Transformers 4.48.3 僅安裝於準備工具 image。它不啟動 PostgreSQL、不要求 GPU，也不需要讀取 DATABASE_URL。模型來源與轉換工作使用暫存目錄，成功才發布到 `./models/asr/breeze-asr-25/<revision>-ct2-fp16-v1/`；失敗可重新執行。請預留數 GB 下載／轉換空間與足夠的主記憶體。
+
+重複執行會驗證並重用既有模型。若已發布目錄遭手動修改或損壞，驗證會拒絕使用；先將該目錄移開，再重新準備。不要原地替換此識別碼的權重，否則既有工作的 Retry 將無法維持相同模型。未準備的 Breeze job 會記錄可重試失敗，完成準備後可 Retry；其他 ASR 選項仍可正常使用。
+
+在實際推論主機用一段有語音的本地錄音檢查文字與逐詞時間戳：
+
+```bash
+docker compose run --rm --no-deps \
+  -e PYTHONPATH=/app \
+  -e AUTHORIZED_AUDIO_FIXTURE=/data/fixtures/short-authorized.wav \
+  worker python3 scripts/smoke-breeze-model.py
+```
+
+Smoke 會確認有非空文字及有限、依序的 word timestamps；字幕時間精準度與說話者邊界仍需人工聽看。這不屬於 fake Worker integration tests 的實測範圍。
+
+Worker 沿用 faster-whisper `word_timestamps=True`、Hotwords 與 VAD，中文仍由既有 OpenCC 流程統一轉換。一次僅保留一個 ASR 模型在快取，切換時卸載舊模型；pyannote 仍可能駐留 GPU，應在目標硬體確認全流程峰值記憶體。Breeze CUDA 載入失敗時遵守既有 `INFERENCE_DEVICE` 的 fallback 規則。
 
 ## 4. 資料持久性
 

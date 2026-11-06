@@ -4,6 +4,7 @@ from pathlib import Path
 
 
 DEFAULT_MODEL = "large-v3-turbo"
+BUILTIN_MODELS = frozenset({DEFAULT_MODEL, "breeze-asr-25"})
 SUPPORTED_OUTPUT_FORMATS = frozenset({"json", "txt", "srt"})
 
 
@@ -12,14 +13,14 @@ class Settings:
     database_url: str
     data_root: Path
     max_upload_size_bytes: int
-    supported_models: frozenset[str] = frozenset({DEFAULT_MODEL})
+    supported_models: frozenset[str] = BUILTIN_MODELS
     diarization_model: str = "pyannote/speaker-diarization-community-1"
     diarization_model_revision: str | None = None
 
 
 def load_settings() -> Settings:
     max_upload_size_mb = int(os.getenv("MAX_UPLOAD_SIZE_MB", "2048"))
-    configured_models = os.getenv("SUPPORTED_MODELS", DEFAULT_MODEL)
+    configured_models = os.getenv("SUPPORTED_MODELS", ",".join(sorted(BUILTIN_MODELS)))
     supported_models = frozenset(
         {DEFAULT_MODEL}
         | {model.strip() for model in configured_models.split(",") if model.strip()}

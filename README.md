@@ -84,13 +84,29 @@ curl -X DELETE http://localhost:8080/v1/transcriptions/tr_xxx
 
 取消 `queued` 工作會直接變成 `canceled`，不會消耗任何 Worker Attempt；取消 `processing` 工作會回傳 `202` 並記錄 `cancel_requested`，Worker 會在下一個安全檢查點停止並確認 `canceled`，不留下可用的部分 Transcript artifact。重複呼叫 cancel 在仍為 `cancel_requested` 時是 idempotent 的；`completed`、`failed`、`canceled` 等終態工作呼叫 cancel 會回傳 `409 job_not_cancelable`。
 
-`formats` 可重複指定 `json`、`txt`、`srt`；省略時預設產出全部三種 artifact。部署可用 `SUPPORTED_MODELS`（逗號分隔）擴充 model allowlist，`large-v3-turbo` 一律是預設模型。
+`formats` 可重複指定 `json`、`txt`、`srt`；省略時預設產出全部三種 artifact。內建 model 選項為 `large-v3-turbo` 與 `breeze-asr-25`，省略 `model` 一律使用 `large-v3-turbo`。部署可用 `SUPPORTED_MODELS`（逗號分隔）調整 model allowlist。
 
 `hotwords` 可重複指定，用來提高辨識器辨識出特定詞（例如 `PV-1`）的機率；每個 hotword trim 後不可為空、最多 50 字，整份清單最多 100 筆，違反時回傳 `422 invalid_hotwords` 且不會建立工作。Hotword 會以使用者提供的原始文字存進工作設定、傳給辨識器並於 `configuration.hotwords` 回傳，不受 `language` 或模型偵測語言影響；Retry 沿用相同的 hotwords。`POST /v1/diarizations` 也接受相同的 `hotwords` 欄位，規則與行為完全一致。
 
 部署操作參數的預設值為：上傳上限 2 GB（`MAX_UPLOAD_SIZE_MB=2048`）、自動 retry 最多 3 次（`MAX_ATTEMPTS=3`）、Worker heartbeat 每 5 秒（`HEARTBEAT_INTERVAL_SECONDS=5`），以及 30 秒 stale timeout（`STALE_TIMEOUT_SECONDS=30`）。檔案與結果不會自動過期；請透過 DELETE 明確刪除 terminal job。
 
 中文地區輸出由 `language` 決定：`zh-tw` 會輸出繁體台灣用語、`zh-cn` 會輸出簡體中國大陸用語；單純使用 `zh` 或未指定時，保留模型原始輸出。轉換會套用到 JSON、TXT、SRT 和 API 回傳的文字。
+
+## Breeze-ASR-25
+
+`breeze-asr-25` 適合台灣華語與中英混用。首次使用前，將固定版本的官方權重轉為 CTranslate2（此步驟需要網路、數 GB 下載空間與足夠 RAM，不需要 GPU）：
+
+```bash
+docker compose --profile model-tools run --rm --build model-tools
+docker compose up -d --build api-server worker
+
+curl -X POST http://localhost:8080/v1/transcriptions \
+  -F file=@meeting.mp3 -F language=zh-tw -F model=breeze-asr-25
+```
+
+既有 `.env` 若設定 `SUPPORTED_MODELS=large-v3-turbo`，請改為 `SUPPORTED_MODELS=large-v3-turbo,breeze-asr-25`。`POST /v1/diarizations` 也可使用相同 model；沿用現有 Hotwords、逐詞時間戳與說話者歸屬流程。Worker 切換 ASR 模型時會卸載前一模型，首次載入會增加延遲。
+
+完整權重版本、真實模型 smoke test 與部署說明見 [Breeze 部署](docs/deployment.md#breeze-asr-25)。
 
 ## Integration tests
 

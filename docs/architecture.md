@@ -84,7 +84,7 @@ Content-Type: multipart/form-data
 | `file` | 二選一 | 音訊或影片檔案 |
 | `youtube_url` | 二選一 | HTTP(S) YouTube URL |
 | `language` | 否 | 例如 `zh`、`zh-tw`、`zh-cn`、`en`；不填則自動偵測 |
-| `model` | 否 | 預設 `large-v3-turbo`；必須在部署設定的 allowlist 中 |
+| `model` | 否 | 預設 `large-v3-turbo`；內建可選 `breeze-asr-25`，必須在部署設定的 allowlist 中 |
 | `formats` | 否 | 可重複指定 `json`、`txt`、`srt`；省略時三者全選 |
 | `hotwords` | 否 | 可重複指定的 Hotword；每個 trim 後不可為空且最多 50 字，整份清單最多 100 筆。Multipart request 必須以 repeated 欄位傳送，不以逗號拆分 |
 
