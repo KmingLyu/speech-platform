@@ -22,8 +22,9 @@ COPY apps/worker/requirements.txt ./requirements.txt
 RUN pip3 install --no-cache-dir --pre -r requirements.txt
 
 COPY apps/worker/src ./src
-COPY scripts/prepare-diarization-model.py scripts/smoke-diarization-model.py scripts/prepare-breeze-model.py scripts/smoke-breeze-model.py ./scripts/
+COPY scripts/prepare-diarization-model.py scripts/smoke-diarization-model.py scripts/prepare-breeze-model.py scripts/smoke-breeze-model.py scripts/smoke-cudnn-runtime.py ./scripts/
 
+ENTRYPOINT ["python3", "-m", "src.runtime"]
 CMD ["python3", "-m", "src.main"]
 
 FROM runtime AS model-tools

@@ -101,6 +101,20 @@ Smoke check（不需要 GPU 或外部網路）請執行：
 
 ## 3. Manual GPU smoke
 
+Worker image 的 entrypoint 會在啟動推論程序前，將 pip 安裝的 NVIDIA cuDNN／cuBLAS 函式庫目錄放到 `LD_LIBRARY_PATH` 最前面，保留原本的 NVIDIA driver 路徑，避免 ASR 先載入 base image 的舊 cuDNN 子函式庫，導致後續 pyannote 的 PyTorch 版本檢查失敗。此設定也適用於 `docker compose run worker ...` 的一次性命令。
+
+重建 Worker 後，可先測試 cuDNN 子函式庫載入與 CUDA RNN 路徑；此步驟不下載模型、不讀寫工作資料：
+
+```bash
+docker compose build worker
+docker compose run --rm --no-deps worker python3 scripts/smoke-cudnn-runtime.py
+docker compose up -d --no-deps worker
+```
+
+預期顯示 `Smoke test passed`，且 `libcudnn_graph`、`libcudnn_ops` 等子函式庫來自 pip 的 `nvidia/cudnn/lib`，而非 `/usr/lib/...` 的舊版本。CTranslate2 自帶的帶雜湊名稱 cuDNN shim 仍可能出現在 maps；它本身出現不等於失敗，要檢查實際子函式庫與 CUDA 運算結果。這項 smoke 不取代後續真實 ASR → diarization 的音檔測試。
+
+`docker compose exec worker ...` 不會重新執行 image entrypoint；需要在現有容器內走相同的啟動設定時，使用 `docker compose exec worker python3 -m src.runtime python3 scripts/smoke-cudnn-runtime.py`。若目前仍有工作執行中，請等待結束後再重建／替換 Worker。
+
 Before accepting diarization jobs, download and validate the configured pinned
 revision. Keep the previous revision directory beside the new one for rollback:
 
