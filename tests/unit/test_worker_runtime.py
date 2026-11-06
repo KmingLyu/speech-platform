@@ -27,7 +27,10 @@ def test_entrypoint_preserves_override_arguments_stdin_and_exit_status() -> None
 
 @pytest.mark.skipif(sys.platform != "linux" or shutil.which("cc") is None,
                     reason="Requires Linux's dynamic loader and a C compiler")
-def test_container_entrypoint_prefers_wheel_cudnn_before_child_starts(tmp_path: Path) -> None:
+@pytest.mark.parametrize(("backend", "expected"), [("asr", "90100"), ("torch", "92400")])
+def test_backends_select_their_own_cudnn_before_child_starts(
+    tmp_path: Path, backend: str, expected: str,
+) -> None:
     old = tmp_path / "system"
     wheel = tmp_path / "site-packages"
     bundled = wheel / "nvidia" / "cudnn" / "lib"
@@ -51,11 +54,12 @@ def test_container_entrypoint_prefers_wheel_cudnn_before_child_starts(tmp_path: 
         "print(os.environ['LD_LIBRARY_PATH'])"
     )
     child = subprocess.run(
-        [*entrypoint, sys.executable, "-c", code],
+        [*entrypoint, *(["--torch-libraries"] if backend == "torch" else []),
+         sys.executable, "-c", code],
         env={**os.environ, "PYTHONPATH": f"{wheel}:{ROOT / 'apps/worker'}",
              "LD_LIBRARY_PATH": str(old)},
         capture_output=True, text=True, check=True,
     )
     lines = child.stdout.splitlines()
-    assert lines[0] == "92400", f"Loaded system cuDNN 9.1 instead of bundled 9.24: {child.stdout}"
-    assert lines[1].split(":") == [str(bundled), str(old)]
+    assert lines[0] == expected, f"Wrong cuDNN for {backend}: {child.stdout}"
+    assert lines[1].split(":") == ([str(bundled), str(old)] if backend == "torch" else [str(old)])

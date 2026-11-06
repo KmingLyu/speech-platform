@@ -1,5 +1,9 @@
 import logging
+import os
+import subprocess
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal, cast
 
 
@@ -38,11 +42,18 @@ def _probe_faster_whisper_cuda() -> tuple[bool, str | None]:
 
 def _probe_pyannote_cuda() -> tuple[bool, str | None]:
     try:
-        import torch
-
-        if torch.cuda.is_available():
+        result = subprocess.run(
+            [sys.executable, "-m", "src.runtime", "--torch-libraries", sys.executable,
+             "-c", "import sys, torch; sys.exit(0 if torch.cuda.is_available() else 1)"],
+            capture_output=True, text=True, timeout=30,
+            env={**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [
+                str(Path(__file__).resolve().parents[1]), os.getenv("PYTHONPATH"),
+            ]))},
+        )
+        if result.returncode == 0:
             return True, None
-        return False, "torch.cuda.is_available() is false"
+        reason = result.stderr.strip() or "torch.cuda.is_available() is false"
+        return False, f"Isolated PyTorch CUDA probe failed: {reason}"
     except Exception as error:
         return False, f"PyTorch CUDA probe failed: {error}"
 

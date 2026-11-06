@@ -101,19 +101,24 @@ Smoke check（不需要 GPU 或外部網路）請執行：
 
 ## 3. Manual GPU smoke
 
-Worker image 的 entrypoint 會在啟動推論程序前，將 pip 安裝的 NVIDIA cuDNN／cuBLAS 函式庫目錄放到 `LD_LIBRARY_PATH` 最前面，保留原本的 NVIDIA driver 路徑，避免 ASR 先載入 base image 的舊 cuDNN 子函式庫，導致後續 pyannote 的 PyTorch 版本檢查失敗。此設定也適用於 `docker compose run worker ...` 的一次性命令。
+Worker 保留 faster-whisper／CTranslate2 原本的 CUDA 函式庫搜尋路徑。PyTorch 的 CUDA 探測與 pyannote diarization 在獨立 Python 程序執行；只有該子程序在啟動前，透過 `src.runtime --torch-libraries` 優先選用 pip 的 NVIDIA cuDNN／cuBLAS 目錄。不可把這個搜尋路徑全域套用到 ASR，因為同一個 cuDNN major 不代表兩個 backend 的 CUDA build 可以混用。
 
-重建 Worker 後，可先測試 cuDNN 子函式庫載入與 CUDA RNN 路徑；此步驟不下載模型、不讀寫工作資料：
+重建 Worker 後，優先用現有音檔測試完整推論流程。腳本只在暫存目錄擷取前 30 秒，不建立工作、不修改原音檔，並嚴格要求兩個 backend 使用 GPU；需先準備 Breeze 與 diarization 的快取：
 
 ```bash
 docker compose build worker
-docker compose run --rm --no-deps worker python3 scripts/smoke-cudnn-runtime.py
+docker compose run --rm --no-deps \
+  -e PYTHONPATH=/app \
+  -e AUTHORIZED_AUDIO_FIXTURE=/data/fixtures/short-authorized.wav \
+  worker python3 scripts/smoke-inference-pipeline.py
 docker compose up -d --no-deps worker
 ```
 
-預期顯示 `Smoke test passed`，且 `libcudnn_graph`、`libcudnn_ops` 等子函式庫來自 pip 的 `nvidia/cudnn/lib`，而非 `/usr/lib/...` 的舊版本。CTranslate2 自帶的帶雜湊名稱 cuDNN shim 仍可能出現在 maps；它本身出現不等於失敗，要檢查實際子函式庫與 CUDA 運算結果。這項 smoke 不取代後續真實 ASR → diarization 的音檔測試。
+預期依序顯示 `ASR passed` 與 `Pipeline smoke passed`；這涵蓋真實 ASR、逐詞時間戳、隔離程序的 diarization、speaker attribution 與 display segmentation。之後仍應驗證一筆完整長音檔工作。
 
-`docker compose exec worker ...` 不會重新執行 image entrypoint；需要在現有容器內走相同的啟動設定時，使用 `docker compose exec worker python3 -m src.runtime python3 scripts/smoke-cudnn-runtime.py`。若目前仍有工作執行中，請等待結束後再重建／替換 Worker。
+只要檢查 PyTorch 的 cuDNN 與 CUDA RNN，可執行 `docker compose run --rm --no-deps worker --torch-libraries python3 scripts/smoke-cudnn-runtime.py`。這不涵蓋 ASR，相容性不能由此單項通過推定。`docker compose exec` 不會經過 image entrypoint，需要額外呼叫 `python3 -m src.runtime --torch-libraries` 才能測相同的 PyTorch 子程序環境。若目前仍有工作執行中，請等待結束後再替換 Worker。
+
+每筆 diarization 會重新載入 pyannote 模型，完成後釋放該程序與模型資源，因此有額外啟動成本。父 Worker 在等待子程序時持續送 heartbeat；子程序非正常退出會回報可重試的 `diarization_process_failed`，不會直接終止父 Worker。取消仍依原有安全檢查點確認，不保證立即中斷推論。
 
 Before accepting diarization jobs, download and validate the configured pinned
 revision. Keep the previous revision directory beside the new one for rollback:

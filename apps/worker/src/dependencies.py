@@ -13,7 +13,7 @@ from .processor import (
 from .script_converter import convert_transcript
 from .source import acquire_source
 from .transcriber import Transcriber
-from .diarizer import PyannoteCommunityDiarization
+from .isolated_diarization import IsolatedDiarization
 from .device import InferenceDevices
 from .alignment import ForcedAlignmentWithWhisperFallback, WhisperWordAlignment
 
@@ -62,7 +62,7 @@ def production_dependencies(
             if settings.alignment_strategy == "whisper_word_timestamps"
             else ForcedAlignmentWithWhisperFallback(None, WhisperWordAlignment())
         ),
-        diarization=PyannoteCommunityDiarization(
+        diarization=IsolatedDiarization(
             model=settings.diarization_model,
             revision=settings.diarization_model_revision,
             model_root=settings.model_root,

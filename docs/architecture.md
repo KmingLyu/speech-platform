@@ -43,6 +43,8 @@ queued
 
 `INFERENCE_DEVICE=auto` 會分別探測 CTranslate2 與 PyTorch 的 CUDA 能力，因為兩個 runtime 可能得到不同結果。`cuda` 模式要求兩者都能使用 CUDA，並在不符合時 fail fast；`cpu` 模式則明確讓兩者使用 CPU。
 
+faster-whisper 在父 Worker 中執行並保留原本的 CUDA library 搜尋路徑；PyTorch 的裝置探測與 pyannote 推論使用獨立 Python 程序，只有該程序優先選用 pip NVIDIA libraries，避免同程序混載不相容的 cuDNN 元件。父 Worker 仍負責工作生命週期與 heartbeat，每次 diarization 子程序結束後釋放模型資源；其原生崩潰會轉為可重試錯誤。這不增加同時處理的 job 數量，也不改變對外 artifact schema。
+
 第一版一次只處理一筆工作。要提高並行數時，應先確認 GPU 記憶體足夠；可啟動更多 Worker，但每個 Worker 都會載入一份模型。
 
 ### PostgreSQL

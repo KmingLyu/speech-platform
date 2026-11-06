@@ -1,4 +1,7 @@
-"""Check cuDNN component loading and the RNN CUDA path without downloading models."""
+"""Check the PyTorch-only CUDA path; launch with src.runtime --torch-libraries.
+
+This does not test CTranslate2. Use smoke-inference-pipeline.py for both backends.
+"""
 
 import ctypes
 from pathlib import Path

@@ -4,6 +4,7 @@ FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04 AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONFAULTHANDLER=1 \
     PYTHONUNBUFFERED=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -22,7 +23,7 @@ COPY apps/worker/requirements.txt ./requirements.txt
 RUN pip3 install --no-cache-dir --pre -r requirements.txt
 
 COPY apps/worker/src ./src
-COPY scripts/prepare-diarization-model.py scripts/smoke-diarization-model.py scripts/prepare-breeze-model.py scripts/smoke-breeze-model.py scripts/smoke-cudnn-runtime.py ./scripts/
+COPY scripts/prepare-diarization-model.py scripts/smoke-diarization-model.py scripts/prepare-breeze-model.py scripts/smoke-breeze-model.py scripts/smoke-cudnn-runtime.py scripts/smoke-inference-pipeline.py ./scripts/
 
 ENTRYPOINT ["python3", "-m", "src.runtime"]
 CMD ["python3", "-m", "src.main"]
