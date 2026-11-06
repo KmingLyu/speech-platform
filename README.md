@@ -47,7 +47,7 @@ FastAPI API ─────────── PostgreSQL
 
 ```bash
 cp .env.example .env
-# 編輯 .env，至少設定 POSTGRES_PASSWORD
+# 編輯 .env，設定 POSTGRES_PASSWORD、對應的 DATABASE_URL 與 DIARIZATION_MODEL_REVISION
 docker compose up -d --build
 docker compose logs -f worker
 ```

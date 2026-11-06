@@ -34,7 +34,11 @@ cp .env.example .env
 ```dotenv
 POSTGRES_PASSWORD=<long-random-password>
 DATABASE_URL=postgresql://speech_asr:<same-password>@postgres:5432/speech_asr
+DIARIZATION_MODEL=pyannote/speaker-diarization-community-1
+DIARIZATION_MODEL_REVISION=<full-hugging-face-commit-sha>
 ```
+
+`DIARIZATION_MODEL_REVISION` 在範本中留空，首次部署必須填入模型的完整固定 commit SHA；更新既有部署時保留原值。即使只執行一般轉錄，目前 Worker 啟動仍會驗證此 diarization 模型已準備完成。
 
 建議明確確認下列 MVP 操作設定（也是 `.env.example` 的預設值）：
 
